@@ -12,14 +12,30 @@ import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet
 // import "hardhat/console.sol";
 
 
+uint256 constant MAX_LOANS_BY_USER = 3;
+
 /// @param loanIds IMPORTANT: 3 is the max loans for user. LoanId == 0 means, no loan at all.
 struct User {
-    uint256 balance;
-    uint256 debt;
-    uint256[3] loanIds;
+    uint256 collateralBalance;
+    // uint256 debt; // debt is always changing.
+    uint256[MAX_LOANS_BY_USER] loanIds;
 }
 
 struct Loan {
+    address owner;
+    /// @dev _amount and totalPayment are denominated in pesos.
+    uint256 _amount;
+    uint256 totalPayment;
+
+    uint8 _installments; // cuantos abonos?
+    uint16 _apy;         // as basis point 100% == 100_00
+    uint32 createdAt;    // unix timestamp
+    uint32 _duration;    // in seconds
+
+    uint256 _attachedCollateral;
+}
+
+struct LoanForm {
     uint256 _amount;
     uint8 _installments; // cuantos abonos?
     uint16 _apy;         // as basis point 100% == 100_00
@@ -63,6 +79,7 @@ contract MercadoSantaFe is ERC4626 {
 
     EnumerableSet.AddressSet private _activeUsers; /// addresses with an active Loan
 
+    uint256 public nextLoanId;
 
     /// @dev An account cannot have less than minCollateralAmount in vault;
     uint256 public minCollateralAmount;
@@ -91,12 +108,14 @@ contract MercadoSantaFe is ERC4626 {
         address _asset // pesos
     ) ERC4626(IERC20(_asset)) ERC20("Mercado: mpETH <> XOC alphaV1", "MSF0001") {
         collateral = _collateral;
+
+        nextLoanId = 1; // loan-id 0 means no loan at all.
     }
 
     function _getUserActiveLoans(User memory _user) internal returns (uint8 _res) {
-        uint256[3] memory loanIds = _user.loanIds;
+        uint256[MAX_LOANS_BY_USER] memory loanIds = _user.loanIds;
         
-        for (uint i; i < 3; i++) {
+        for (uint i; i < MAX_LOANS_BY_USER; i++) {
             if (loanIds[i] > 0) {
                 _res++;
             }
@@ -255,7 +274,17 @@ contract MercadoSantaFe is ERC4626 {
         /// TODO: CHECK A RELATION BETWEEN APY AND DURATION.
     }
 
-    function borrow(Loan memory _loan) external strictValidation(_loan) {
+    function pay(uint256 _amount, uint256 _loanId) external {
+        Loan storage loan = loans[_loanIdA];
+
+
+
+        coverInstallment(loan, _amount)
+
+        doTransferIn(asset(), )
+    }
+
+    function borrow(LoanForm memory _loan) external strictValidation(_loan) {
 
         uint256 userCollat = balances[msg.sender];
 
@@ -268,11 +297,63 @@ contract MercadoSantaFe is ERC4626 {
 
         if (availableForNext < _loan._amount) revert InvalidInput();
 
-        accountsDebt +
+        /// AT THIS POINT THE LOAN SHOULD BE 100% VALIDATED.
+        
+        _createNewLoan(nextLoanId, _loan, msg.sender);
 
 
 
 
+    }
+
+    function convertToLoan(LoanForm memory loanForm, address owner) public pure returns (Loan memory) {
+        return Loan({
+            owner: owner,
+            _amount: loanForm._amount,
+            _installments: loanForm._installments,
+            _apy: loanForm._apy,
+            createdAt: block.timestamp;
+            _duration: loanForm._duration,
+            _attachedCollateral: loanForm._attachedCollateral
+        });
+    }
+
+    function _assignNewLoanTo(User storage _user, uint256 _newLoanId) private {
+        for (uint i; i < MAX_LOANS_BY_USER; i++) {
+            if (user.loanIds[i] == 0) {
+                // replace it to the new loan id
+                user.loanIds[i] = _newLoanId;
+                return;
+            }
+        }
+        // "No more available loans"
+        revert InvalidInput();
+    }
+
+    function _createNewLoan(uint256 _newLoanId, LoanForm memory _form, address owner) internal {
+        User storage user = users[owner];
+
+
+        Loan memory newLoan = convertToLoan(_form, owner);
+
+        loans[_newLoanId] = newLoan;
+
+        /// FIND the first available loan id
+        // if (_getUserActiveLoans(user) == MAX_LOANS_BY_USER) revert InvalidInput(); // no new loans for owner
+        _assignNewLoanTo(user, _newLoanId); // see code line above
+
+        _activeUsers.add(owner);
+
+        // lock assets
+        _lockCollateral(user, newLoan);
+
+        doTransferOut(asset(), newLoan.amount, owner); // send pesos
+
+    }
+
+    function _lockCollateral(User storage _user, Loan memory _loan) private {
+        require(_user.collateralBalance >= _loan._attachedCollateral);
+        user.collateralBalance -= _loan._attachedCollateral;
     }
 
     function getUserDebt(address msg.sender) public returns (uint256) {
