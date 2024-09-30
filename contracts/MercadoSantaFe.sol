@@ -23,21 +23,41 @@ struct User {
 
 struct Loan {
     address owner;
-    /// @dev _amount and totalPayment are denominated in pesos.
-    uint256 _amount;
+    /// @dev amount and totalPayment are denominated in pesos.
+    uint256 amount;
     uint256 totalPayment;
 
-    uint8 _installments; // cuantos abonos?
-    uint16 _apy;         // as basis point 100% == 100_00
+    uint8 installments; // cuantos abonos?
+    uint16 apy;         // as basis point 100% == 100_00
     uint32 createdAt;    // unix timestamp
-    uint32 _duration;    // in seconds
+    uint32 duration;    // in seconds
 
     uint256 _attachedCollateral;
 }
 
+library LoanLib {
+
+    /// @dev should revert if the interval is invalid.
+    function intervalDuration(Loan memory _self) internal view returns (uint256 _intervalDuration) {
+        uint256 _intervalDuration = _loan._duration.mulDiv(1, _loan.installments, Math.Rounding.Ceil);
+        require(_intervalDuration >= MAX_TIME_BETWEEN_INSTALLS); /// check after updating the value.
+    }
+
+
+    /// Loan Total Grand Debt.
+    function grandDebt(Loan memory _self) internal view returns (uint256) {
+        return _loan.amount.mulDiv(_loan.apy, BASIS_POINTS, Math.Rounding.Ceil);
+    }
+
+    function isFullyPaid(Loan memory _self) internal view returns (bool) {
+        _self._amount.
+        return _self.
+    }
+}
+
 struct LoanForm {
     uint256 _amount;
-    uint8 _installments; // cuantos abonos?
+    uint8 installments;  // cuantos abonos?
     uint16 _apy;         // as basis point 100% == 100_00
     uint32 _duration;    // in seconds
     uint256 _attachedCollateral;
@@ -53,6 +73,7 @@ contract MercadoSantaFe is ERC4626 {
     using SafeERC20 for IERC20;
     using Math for uint256;
     using EnumerableSet for EnumerableSet.AddressSet;
+    using LoanLib for Loan;
 
     /// Constants -----------------------------------------------------------------------
 
@@ -64,6 +85,7 @@ contract MercadoSantaFe is ERC4626 {
     /// @dev Amount is in pesos.
     uint256 public constant MAX_CREDIT_AMOUNT = 10_000 * 10**18;
     uint256 public constant MIN_CREDIT_AMOUNT =  1_000 * 10**18;
+    uint256 public constant FIXED_LOAN_FEE = 100 * 10**18; // Can be zero.
 
     /// @dev How many installments?
     uint8 public constant MAX_INSTALLMENTS = 52;
@@ -262,10 +284,10 @@ contract MercadoSantaFe is ERC4626 {
         if (_loan._amount > MAX_CREDIT_AMOUNT) revert InvalidInput();
         if (_loan._amount < MIN_CREDIT_AMOUNT) revert InvalidInput();
 
-        if (_loan._installments > MAX_INSTALLMENTS) revert InvalidInput();
-        if (_loan._installments < MIN_INSTALLMENTS) revert InvalidInput();
+        if (_loan.installments > MAX_INSTALLMENTS) revert InvalidInput();
+        if (_loan.installments < MIN_INSTALLMENTS) revert InvalidInput();
 
-        if (_loan._duration / _loan._installments > MAX_TIME_BETWEEN_INSTALLS) revert InvalidInput();
+        if (_loan._duration / _loan.installments > MAX_TIME_BETWEEN_INSTALLS) revert InvalidInput();
 
         if (_loan._apy > MAX_APY_BP) revert InvalidInput();
         if (_loan._apy < MIN_APY_BP) revert InvalidInput();
@@ -290,14 +312,48 @@ contract MercadoSantaFe is ERC4626 {
         
     }
 
-    function _loanDebt(Loan memory _loan) internal view returns (uint256 _currentDebt, uint256 _nextPayment) {
-        uint256 interval = _loan._duration.mulDiv(1, _loan._installments, Math.Rounding.Floor);
+    /// @param maturedDebt – implies the debt has reached its due date.
+    /// @param nextInstallment – focuses on the fact that this is the next payment to be made.
+    /// @param remainingDebt – clearly conveys that this is what’s left after payments.
+    struct LoanDebtStatus {
+        uint256 maturedDebt; // in pesos
+        uint256 nextInstallment; // in pesos
+        uint256 remainingDebt; // in pesos
+    }
 
+    /// @dev this function consider different scenarios, using the block.timestamp.
+    function _loanDebt(Loan memory _loan) internal view returns (LoanDebtStatus memory _status) {
+        uint64 today = block.timestamp;
+        uint256 intervalDuration = _loan._duration.mulDiv(1, _loan.installments, Math.Rounding.Ceil);
+        require (intervalDuration >= MAX_TIME_BETWEEN_INSTALLS);
+
+        /// Loan Grand Debt.
         uint256 grandDebt = _loan._amount.mulDiv(_loan._apy, BASIS_POINTS, Math.Rounding.Ceil);
 
-        uint256 payment = grandDebt.mulDiv(1, _loan._installments, Math.Rounding.Floor);
+        uint256 payment = grandDebt.mulDiv(1, _loan.installments, Math.Rounding.Floor);
 
-        for (uint i; i < _loan._installments; i++) {
+        /// TODO: It could be nice if the payment is softly rounded.
+
+        for (uint i; i < _loan.installments; i++) {
+            if (i == 0) {
+                _status = LoanDebtStatus {
+                    FIXED_LOAN_FEE;
+                    payment;
+                    _loan._amount - loan.totalPayment;
+                };
+
+            } else if (i == i - 1) {
+                _loan.isFullyPaid()
+                /// we must be the last installment.
+                _status = LoanDebtStatus {
+                    FIXED_LOAN_FEE;
+                    payment;
+                    _loan._amount - loan.totalPayment;
+                };
+            }
+
+            if k
+
 
 
         }
@@ -351,7 +407,7 @@ contract MercadoSantaFe is ERC4626 {
         return Loan({
             owner: owner,
             _amount: loanForm._amount,
-            _installments: loanForm._installments,
+            installments: loanForm.installments,
             _apy: loanForm._apy,
             createdAt: block.timestamp,
             _duration: loanForm._duration,
