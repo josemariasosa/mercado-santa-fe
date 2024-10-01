@@ -29,38 +29,41 @@ struct Loan {
 
     uint8 installments; // cuantos abonos?
     uint16 apy;         // as basis point 100% == 100_00
-    uint32 createdAt;    // unix timestamp
+    uint256 createdAt;    // unix timestamp
     uint32 duration;    // in seconds
 
-    uint256 _attachedCollateral;
+    uint256 attachedCollateral;
 }
 
 library LoanLib {
 
+    using Math for uint256;
+
+    uint32 private constant MAX_TIME_BETWEEN_INSTALLS = (4 * 1 weeks); // aprox 1 month.
+    uint16 private constant BASIS_POINTS = 100_00; // 100.00%
+
     /// @dev should revert if the interval is invalid.
     function intervalDuration(Loan memory _self) internal view returns (uint256 _intervalDuration) {
-        uint256 _intervalDuration = _loan._duration.mulDiv(1, _loan.installments, Math.Rounding.Ceil);
+        _intervalDuration = uint256(_self.duration).mulDiv(1, _self.installments, Math.Rounding.Ceil);
         require(_intervalDuration >= MAX_TIME_BETWEEN_INSTALLS); /// check after updating the value.
     }
 
-
     /// Loan Total Grand Debt.
     function grandDebt(Loan memory _self) internal view returns (uint256) {
-        return _loan.amount.mulDiv(_loan.apy, BASIS_POINTS, Math.Rounding.Ceil);
+        return _self.amount.mulDiv(_self.apy, BASIS_POINTS, Math.Rounding.Ceil);
     }
 
     function isFullyPaid(Loan memory _self) internal view returns (bool) {
-        _self._amount.
-        return _self.
+        return grandDebt(_self) == _self.totalPayment;
     }
 }
 
 struct LoanForm {
-    uint256 _amount;
+    uint256 amount;
     uint8 installments;  // cuantos abonos?
-    uint16 _apy;         // as basis point 100% == 100_00
-    uint32 _duration;    // in seconds
-    uint256 _attachedCollateral;
+    uint16 apy;         // as basis point 100% == 100_00
+    uint32 duration;    // in seconds
+    uint256 attachedCollateral;
 }
 
 /// CDP collateral debt possition
@@ -90,13 +93,12 @@ contract MercadoSantaFe is ERC4626 {
     /// @dev How many installments?
     uint8 public constant MAX_INSTALLMENTS = 52;
     uint8 public constant MIN_INSTALLMENTS = 1;
-    uint32 public constant MAX_TIME_BETWEEN_INSTALLS = (4 * 1 weeks); // aprox 1 month.
 
     /// @dev APY is always in basis point 8.00% == 800;
     uint16 public constant MAX_APY_BP = type(uint16).max;
     uint16 public constant MIN_APY_BP = 8_00;
 
-    uint32 public constant MAX_DURATION = 1 years;
+    uint32 public constant MAX_DURATION = 365 days;
     uint32 public constant MIN_DURATION = 1 weeks;
 
     /// Storage -------------------------------------------------------------------------
@@ -109,7 +111,7 @@ contract MercadoSantaFe is ERC4626 {
     uint256 public minCollateralAmount;
 
     /// @dev Collateral, and all sort of good User stuff. user => balance
-    mapping (address => uint256) public users;
+    mapping (address => User) public users;
 
     mapping (uint256 => Loan) public loans;
 
@@ -146,7 +148,7 @@ contract MercadoSantaFe is ERC4626 {
         }
     }
 
-    function totalAssets() public view virtual returns (uint256) {
+    function totalAssets() public view override returns (uint256) {
         return availableAsset + totalInCDP;
     }
 
@@ -187,7 +189,7 @@ contract MercadoSantaFe is ERC4626 {
         // Conclusion: we need to do the transfer before we mint so that any reentrancy would happen before the
         // assets are transferred and before the shares are minted, which is a valid state.
         // slither-disable-next-line reentrancy-no-eth
-        SafeERC20.safeTransferFrom(asset(), caller, address(this), assets);
+        SafeERC20.safeTransferFrom(IERC20(asset()), caller, address(this), assets);
         _mint(receiver, shares);
 
         /// updating global state.
@@ -278,22 +280,23 @@ contract MercadoSantaFe is ERC4626 {
     }
 
 
-    modifier strictValidation(Loan memory _loan) {
-        if (_loan._amount <= availableAsset) revert NotEnoughLiquidity();
+    modifier strictValidation(LoanForm memory _loan) {
+        if (_loan.amount <= availableAsset) revert NotEnoughLiquidity();
 
-        if (_loan._amount > MAX_CREDIT_AMOUNT) revert InvalidInput();
-        if (_loan._amount < MIN_CREDIT_AMOUNT) revert InvalidInput();
+        if (_loan.amount > MAX_CREDIT_AMOUNT) revert InvalidInput();
+        if (_loan.amount < MIN_CREDIT_AMOUNT) revert InvalidInput();
 
         if (_loan.installments > MAX_INSTALLMENTS) revert InvalidInput();
         if (_loan.installments < MIN_INSTALLMENTS) revert InvalidInput();
 
-        if (_loan._duration / _loan.installments > MAX_TIME_BETWEEN_INSTALLS) revert InvalidInput();
+        // if (_loan._duration / _loan.installments > MAX_TIME_BETWEEN_INSTALLS) revert InvalidInput();
+        // _loan.intervalDuration();
 
-        if (_loan._apy > MAX_APY_BP) revert InvalidInput();
-        if (_loan._apy < MIN_APY_BP) revert InvalidInput();
+        if (_loan.apy > MAX_APY_BP) revert InvalidInput();
+        if (_loan.apy < MIN_APY_BP) revert InvalidInput();
 
-        if (_loan._duration > MAX_DURATION) revert InvalidInput();
-        if (_loan._duration < MIN_DURATION) revert InvalidInput();
+        if (_loan.duration > MAX_DURATION) revert InvalidInput();
+        if (_loan.duration < MIN_DURATION) revert InvalidInput();
 
         /// TODO: CHECK A RELATION BETWEEN APY AND DURATION + TOTAL_LIQUIDITY.
 
@@ -303,10 +306,10 @@ contract MercadoSantaFe is ERC4626 {
     function _loanProgress(Loan memory _loan) internal view returns (uint256) {
         if (_loan.createdAt <= block.timestamp) return 0;
 
-        uint256 loanEnds = _loan.createdAt + _loan._duration;
+        uint256 loanEnds = _loan.createdAt + _loan.duration;
         if (block.timestamp < loanEnds) {
             uint256 elapsedTime = block.timestamp - _loan.createdAt;
-            return elapsedTime.mulDiv(10**18, _loan._duration);
+            return elapsedTime.mulDiv(10**18, _loan.duration);
         }
         return 10**18; // 100%
         
@@ -321,41 +324,55 @@ contract MercadoSantaFe is ERC4626 {
         uint256 remainingDebt; // in pesos
     }
 
+    function _removeDecimals(uint256 _payment) internal returns (uint256) {
+        return (_payment / 10 ** decimals()) * 10 ** decimals();
+    }
+
+    function _getCurrentInstallment(Loan memory _loan) internal view returns (uint256) {
+        for (uint i = 1; i < _loan.installments; i++) {
+            if (block.timestamp <= _loan.createdAt + (_loan.intervalDuration() * i)) {
+                return i;
+            }
+        }
+        return _loan.installments;
+    }
+
     /// @dev this function consider different scenarios, using the block.timestamp.
     function _loanDebt(Loan memory _loan) internal view returns (LoanDebtStatus memory _status) {
-        uint64 today = block.timestamp;
-        uint256 intervalDuration = _loan._duration.mulDiv(1, _loan.installments, Math.Rounding.Ceil);
-        require (intervalDuration >= MAX_TIME_BETWEEN_INSTALLS);
+        uint256 today = block.timestamp;
+        uint256 intervalDuration = _loan.intervalDuration();
 
-        /// Loan Grand Debt.
-        uint256 grandDebt = _loan._amount.mulDiv(_loan._apy, BASIS_POINTS, Math.Rounding.Ceil);
+        // Loan Grand Debt.
+        uint256 grandDebt = _loan.grandDebt();
 
+        // Last payment must be for the total debt.
         uint256 payment = grandDebt.mulDiv(1, _loan.installments, Math.Rounding.Floor);
-
         /// TODO: It could be nice if the payment is softly rounded.
+        // payment = _removeDecimals(payment);
 
-        for (uint i; i < _loan.installments; i++) {
-            if (i == 0) {
-                _status = LoanDebtStatus {
-                    FIXED_LOAN_FEE;
-                    payment;
-                    _loan._amount - loan.totalPayment;
-                };
+        uint256 whereAmI = _getCurrentInstallment(_loan);
 
-            } else if (i == i - 1) {
-                _loan.isFullyPaid()
-                /// we must be the last installment.
-                _status = LoanDebtStatus {
-                    FIXED_LOAN_FEE;
-                    payment;
-                    _loan._amount - loan.totalPayment;
-                };
-            }
-
-            if k
-
-
-
+        if (whereAmI == 0) {
+            return LoanDebtStatus(
+                FIXED_LOAN_FEE,
+                payment,
+                _loan.amount - _loan.totalPayment
+            );
+        } else if (whereAmI == _loan.installments) {
+            // uint256 maturedDebt = FIXED_LOAN_FEE + (_loan.installments - 1) * paymen
+            return LoanDebtStatus({
+                /// TODO
+                maturedDebt: _loan.totalPayment == FIXED_LOAN_FEE + grandDebt ? 0 : FIXED_LOAN_FEE + grandDebt,
+                nextInstallment: _loan.totalPayment >= FIXED_LOAN_FEE + grandDebt ? 0 : FIXED_LOAN_FEE + grandDebt,
+                remainingDebt: _loan.totalPayment >= FIXED_LOAN_FEE + grandDebt ? 0 : FIXED_LOAN_FEE + grandDebt
+            });
+        } else {
+            return LoanDebtStatus({
+                /// TODO
+                maturedDebt: _loan.totalPayment >= FIXED_LOAN_FEE + grandDebt ? 0 : FIXED_LOAN_FEE + grandDebt,
+                nextInstallment: _loan.totalPayment >= FIXED_LOAN_FEE + grandDebt ? 0 : FIXED_LOAN_FEE + grandDebt,
+                remainingDebt: _loan.totalPayment >= FIXED_LOAN_FEE + grandDebt ? 0 : FIXED_LOAN_FEE + grandDebt
+            });
         }
     }
 
@@ -383,16 +400,16 @@ contract MercadoSantaFe is ERC4626 {
 
     function borrow(LoanForm memory _loan) external strictValidation(_loan) {
 
-        uint256 userCollat = users[msg.sender].collateral;
+        uint256 userCollat = users[msg.sender].balanceCollat;
 
         uint256 collateralTotalValue = fromETHtoPeso(userCollat);
         uint256 maxBorrow = collateralTotalValue.mulDiv(85_00, 100_00); // LTV
 
-        uint256 debt = users[msg.sender].debt;
+        // uint256 debt = users[msg.sender].debt;
 
-        uint256 availableForNext = maxBorrow > debt ? maxBorrow - debt : 0;
+        // uint256 availableForNext = maxBorrow > debt ? maxBorrow - debt : 0;
 
-        if (availableForNext < _loan._amount) revert InvalidInput();
+        // if (availableForNext < _loan._amount) revert InvalidInput();
 
         /// AT THIS POINT THE LOAN SHOULD BE 100% VALIDATED.
         
@@ -403,23 +420,24 @@ contract MercadoSantaFe is ERC4626 {
 
     }
 
-    function convertToLoan(LoanForm memory loanForm, address owner) public pure returns (Loan memory) {
+    function convertToLoan(LoanForm memory loanForm, address owner) public view returns (Loan memory) {
         return Loan({
             owner: owner,
-            _amount: loanForm._amount,
+            amount: loanForm.amount,
+            totalPayment: 0,
             installments: loanForm.installments,
-            _apy: loanForm._apy,
+            apy: loanForm.apy,
             createdAt: block.timestamp,
-            _duration: loanForm._duration,
-            _attachedCollateral: loanForm._attachedCollateral
+            duration: loanForm.duration,
+            attachedCollateral: loanForm.attachedCollateral
         });
     }
 
     function _assignNewLoanTo(User storage _user, uint256 _newLoanId) private {
         for (uint i; i < MAX_LOANS_BY_USER; i++) {
-            if (user.loanIds[i] == 0) {
+            if (_user.loanIds[i] == 0) {
                 // replace it to the new loan id
-                user.loanIds[i] = _newLoanId;
+                _user.loanIds[i] = _newLoanId;
                 return;
             }
         }
@@ -444,18 +462,18 @@ contract MercadoSantaFe is ERC4626 {
         // lock assets
         _lockCollateral(user, newLoan);
 
-        doTransferOut(asset(), newLoan.amount, owner); // send pesos
+        doTransferOut(asset(), owner, newLoan.amount); // send pesos
 
     }
 
     function _lockCollateral(User storage _user, Loan memory _loan) private {
-        require(_user.collateralBalance >= _loan._attachedCollateral);
-        user.collateralBalance -= _loan._attachedCollateral;
+        require(_user.balanceCollat >= _loan.attachedCollateral);
+        _user.balanceCollat -= _loan.attachedCollateral;
     }
 
-    function getUserDebt(address _account) public returns (uint256) {
-        userD[_account].debt;
-    }
+    // function getUserDebt(address _account) public returns (uint256) {
+    //     users[_account].debt;
+    // }
 
 
     /// @dev The price in base asset pesos, of the collateral (mpETH).
@@ -464,12 +482,6 @@ contract MercadoSantaFe is ERC4626 {
     }
 
 
-
-
-
-    function _assertValidToken(IERC20 _token) private {
-        if (!validCollateral[_token]) revert InvalidCollateral(address(_token));
-    }
 
     function doTransferIn(address _asset, address _from, uint256 _amount) private {
         IERC20(_asset).safeTransferFrom(_from, address(this), _amount);
@@ -480,15 +492,4 @@ contract MercadoSantaFe is ERC4626 {
     }
 
 
-    function withdraw() public {
-        // Uncomment this line, and the import of "hardhat/console.sol", to print a log in your terminal
-        // console.log("Unlock time is %o and block timestamp is %o", unlockTime, block.timestamp);
-
-        require(block.timestamp >= unlockTime, "You can't withdraw yet");
-        require(msg.sender == owner, "You aren't the owner");
-
-        emit Withdrawal(address(this).balance, block.timestamp);
-
-        owner.transfer(address(this).balance);
-    }
 }
