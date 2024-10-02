@@ -40,6 +40,8 @@ contract MercadoSantaFe {
 
     /// Constants -----------------------------------------------------------------------
 
+    ///@dev the most common term for a time extension allowed after the due date.
+    uint256 private constant GRACE_PERIOD = 5 days; // 5 natural days
     uint16 private constant BASIS_POINTS = 100_00; // 100.00%
 
     IERC20 public immutable collateral;
@@ -96,6 +98,7 @@ contract MercadoSantaFe {
     error DoNotLeaveDust(uint256 _change);
     error NotEnoughLiquidity();
     error MaxLoansByUser();
+    error PayOnlyWhatYouOwn(uint256 _remainingDebt);
 
     constructor(
         IERC20 _collateral,
@@ -252,11 +255,12 @@ contract MercadoSantaFe {
 
         uint256 whereAmI = _getCurrentInstallment(_loan);
 
-        console.log("today: ", today);
-        console.log("intervalDuration: ", intervalDuration);
-        console.log("grandDebt: ", grandDebt);
-        console.log("payment: ", payment);
-        console.log("whereAmI: ", whereAmI);
+
+        // console.log("today: ", today);
+        // console.log("intervalDuration: ", intervalDuration);
+        // console.log("grandDebt: ", grandDebt);
+        // console.log("payment: ", payment);
+        // console.log("whereAmI: ", whereAmI);
 
         uint256 totalDebt;
         uint256 remainingDebt;
@@ -288,26 +292,36 @@ contract MercadoSantaFe {
     }
 
     function pay(uint256 _amount, uint256 _loanId) external {
+        if (_loanId == 0) revert InvalidInput();
+
         Loan storage loan = loans[_loanId];
 
-        // uint256 loanProgress = loan.
+        if (loan.isFullyPaid()) revert LoanIsFullyPaid();
 
-        doTransferIn(asset(), msg.sender, _amount);
+        bool late = block.timestamp - GRACE_PERIOD > loan.createdAt + loan.duration;
 
-        // coverInstallment(loan, _amount);
+        doTransferIn(bodega.asset(), msg.sender, _amount);
 
+        LoanDebtStatus memory _status = _loanDebt(loan);
+        uint256 remainingDebt = _status.remainingDebt;
+        // if (late) remainingDebt += _getPenalty(loan)
+
+        if (_amount > remainingDebt) revert PayOnlyWhatYouOwn(remainingDebt);
+
+        /// updating Storage
+        loan.totalPayment += _amount;
     }
 
-    function converInstallment(Loan storage _loan, uint256 _amount) internal {
+    // function converInstallment(Loan storage _loan, uint256 _amount) internal {
 
-        uint256 totalPayment = _loan.totalPayment + _amount;
-        // do not pay more than the credit.
-        require(totalPayment <= _loan.amount);
+    //     uint256 totalPayment = _loan.totalPayment + _amount;
+    //     // do not pay more than the credit.
+    //     require(totalPayment <= _loan.amount);
 
 
-        _loan.totalPayment += _amount;
+    //     _loan.totalPayment += _amount;
         
-    }
+    // }
 
     
 
