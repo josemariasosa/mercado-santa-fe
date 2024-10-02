@@ -258,6 +258,8 @@ contract MercadoSantaFe {
         console.log("payment: ", payment);
         console.log("whereAmI: ", whereAmI);
 
+        uint256 totalDebt;
+
         if (whereAmI == 0) {
             return LoanDebtStatus(
                 0,
@@ -266,7 +268,7 @@ contract MercadoSantaFe {
             );
         } else if (whereAmI == _loan.installments) { // TODO: do I have to (- 1)? we are the last
             // uint256 maturedDebt = FIXED_LOAN_FEE + (_loan.installments - 1) * paymen
-            uint256 totalDebt = FIXED_LOAN_FEE + grandDebt;
+            totalDebt = FIXED_LOAN_FEE + grandDebt;
             uint256 remainingDebt = totalDebt - _loan.totalPayment;
             return LoanDebtStatus({
                 maturedDebt: _loan.totalPayment == totalDebt ? 0 : remainingDebt,
@@ -274,6 +276,7 @@ contract MercadoSantaFe {
                 remainingDebt
             });
         } else {
+            totalDebt = FIXED_LOAN_FEE + grandDebt;
             return LoanDebtStatus({
                 maturedDebt: _loan.totalPayment >= payment * whereAmI ? 0 : totalDebt,
                 nextInstallment: _loan.totalPayment >= totalDebt ? 0 : totalDebt,
