@@ -78,6 +78,8 @@ contract MercadoSantaFe {
 
     mapping (uint256 => Loan) public loans;
 
+    /// @dev refers to the original amount loaned, before interest is added.
+    uint256 public loanPrincipal;
 
 
     /// Errors & events -----------------------------------------------------------------
@@ -152,42 +154,34 @@ contract MercadoSantaFe {
     /// Borrowing Pesos 🪙 ---------------------------------------------------------------
 
     function borrow(LoanForm memory _form) external {
+        User storage user = users[msg.sender];
         Loan memory newLoan = _convertToLoan(_form, msg.sender); // Revert if _form is invalid.
         uint256 loanId = nextLoanId++;
 
-        uint256 balance = users[msg.sender].balanceCollat;
-
-        uint256 collateralTotalValue = fromETHtoPeso(balance);
+        uint256 collateralTotalValue = fromETHtoPeso(user.balanceCollat);
         uint256 maxBorrow = collateralTotalValue.mulDiv(85_00, 100_00); // LTV
         require(_form.amount <= maxBorrow);
 
+        // TODO
         // uint256 availableForNext = maxBorrow > debt ? maxBorrow - debt : 0;
-
         // if (availableForNext < _loan._amount) revert InvalidInput();
 
         /// AT THIS POINT THE LOAN SHOULD BE 100% VALIDATED.
-        
-
-        User storage user = users[msg.sender];
 
 
-
-        /// FIND the first available loan id
-        _assignNewLoanTo(user, loanId); // Revert if the user has the max number of loans already.
-
+        /// @dev FIND the first available loan id, or revert.
+        _assignNewLoanTo(user, loanId); // Revert if the max number of loans.
         loans[loanId] = newLoan;
-
-
         _activeUsers.add(msg.sender);
+        
+        /// @dev refers to the original amount loaned, before interest is added.
+        loanPrincipal += newLoan.amount;
 
         // lock assets
         _lockCollateral(user, newLoan);
 
+        /// TODO
         // doTransferOut(asset(), owner, newLoan.amount); // send pesos
-
-
-
-
     }
 
 
@@ -230,6 +224,10 @@ contract MercadoSantaFe {
         return (_payment / 10 ** decimals()) * 10 ** decimals();
     }
 
+    /// @return 0 if the first installment isn't due.
+    ///         1 at this point, totalPayment >= payment * 1;
+    ///         2 at this point, totalPayment >= payment * 2;
+    ///         if n == (_loan.installments - 1) last installment must cover amount + amountInterest + PENALTY; to unlock the collateral.
     function _getCurrentInstallment(Loan memory _loan) internal view returns (uint256) {
         for (uint i = 1; i < _loan.installments; i++) {
             if (block.timestamp <= _loan.createdAt + (_loan.intervalDuration() * i)) {
@@ -262,24 +260,24 @@ contract MercadoSantaFe {
 
         if (whereAmI == 0) {
             return LoanDebtStatus(
-                FIXED_LOAN_FEE,
-                payment,
+                0,
+                payment + FIXED_LOAN_FEE,
                 _loan.amount - _loan.totalPayment
             );
-        } else if (whereAmI == _loan.installments) {
+        } else if (whereAmI == _loan.installments) { // TODO: do I have to (- 1)? we are the last
             // uint256 maturedDebt = FIXED_LOAN_FEE + (_loan.installments - 1) * paymen
+            uint256 totalDebt = FIXED_LOAN_FEE + grandDebt;
+            uint256 remainingDebt = totalDebt - _loan.totalPayment;
             return LoanDebtStatus({
-                /// TODO
-                maturedDebt: _loan.totalPayment == FIXED_LOAN_FEE + grandDebt ? 0 : FIXED_LOAN_FEE + grandDebt,
-                nextInstallment: _loan.totalPayment >= FIXED_LOAN_FEE + grandDebt ? 0 : FIXED_LOAN_FEE + grandDebt,
-                remainingDebt: _loan.totalPayment >= FIXED_LOAN_FEE + grandDebt ? 0 : FIXED_LOAN_FEE + grandDebt
+                maturedDebt: _loan.totalPayment == totalDebt ? 0 : remainingDebt,
+                nextInstallment: _loan.totalPayment >= totalDebt ? 0 : totalDebt,
+                remainingDebt
             });
         } else {
             return LoanDebtStatus({
-                /// TODO
-                maturedDebt: _loan.totalPayment >= FIXED_LOAN_FEE + grandDebt ? 0 : FIXED_LOAN_FEE + grandDebt,
-                nextInstallment: _loan.totalPayment >= FIXED_LOAN_FEE + grandDebt ? 0 : FIXED_LOAN_FEE + grandDebt,
-                remainingDebt: _loan.totalPayment >= FIXED_LOAN_FEE + grandDebt ? 0 : FIXED_LOAN_FEE + grandDebt
+                maturedDebt: _loan.totalPayment >= payment * whereAmI ? 0 : totalDebt,
+                nextInstallment: _loan.totalPayment >= totalDebt ? 0 : totalDebt,
+                remainingDebt: _loan.totalPayment >= totalDebt ? 0 : totalDebt
             });
         }
     }
