@@ -2,7 +2,7 @@ const { expect } = require("chai");
 const { ethers, upgrades } = require("hardhat");
 
 async function deployProtocolFixture() {
-  const MercadoSantaFe = await ethers.getContractFactory("MercadoSantaFe");
+  const MercadoSantaFe = await ethers.getContractFactory("MercadoSantaFeHarness");
   const MPETHToken = await ethers.getContractFactory("MPETHToken");
   const XOCToken = await ethers.getContractFactory("XOCToken");
 
@@ -24,8 +24,8 @@ async function deployProtocolFixture() {
   /// Deploying markets.
 
   const MercadoSantaFeContract = await MercadoSantaFe.deploy(
-    MPETHTokenContract.target(),
-    XOCTokenContract.target()
+    MPETHTokenContract.target,
+    XOCTokenContract.target
   );
   await MercadoSantaFeContract.waitForDeployment();
 

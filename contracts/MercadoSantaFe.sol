@@ -8,8 +8,11 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
+import {Loan, LoanDebtStatus, LoanForm, LoanLib} from "./lib/Loan.sol";
+import {IBodegaDeChocolates} from "./interfaces/IBodegaDeChocolates.sol";
+
 // Uncomment this line to use console.log
-// import "hardhat/console.sol";
+import "hardhat/console.sol";
 
 
 uint256 constant MAX_LOANS_BY_USER = 3;
@@ -21,57 +24,14 @@ struct User {
     uint256[MAX_LOANS_BY_USER] loanIds;
 }
 
-struct Loan {
-    address owner;
-    /// @dev amount and totalPayment are denominated in pesos.
-    uint256 amount;
-    uint256 totalPayment;
 
-    uint8 installments; // cuantos abonos?
-    uint16 apy;         // as basis point 100% == 100_00
-    uint256 createdAt;    // unix timestamp
-    uint32 duration;    // in seconds
-
-    uint256 attachedCollateral;
-}
-
-library LoanLib {
-
-    using Math for uint256;
-
-    uint32 private constant MAX_TIME_BETWEEN_INSTALLS = (4 * 1 weeks); // aprox 1 month.
-    uint16 private constant BASIS_POINTS = 100_00; // 100.00%
-
-    /// @dev should revert if the interval is invalid.
-    function intervalDuration(Loan memory _self) internal view returns (uint256 _intervalDuration) {
-        _intervalDuration = uint256(_self.duration).mulDiv(1, _self.installments, Math.Rounding.Ceil);
-        require(_intervalDuration >= MAX_TIME_BETWEEN_INSTALLS); /// check after updating the value.
-    }
-
-    /// Loan Total Grand Debt.
-    function grandDebt(Loan memory _self) internal view returns (uint256) {
-        return _self.amount.mulDiv(_self.apy, BASIS_POINTS, Math.Rounding.Ceil);
-    }
-
-    function isFullyPaid(Loan memory _self) internal view returns (bool) {
-        return grandDebt(_self) == _self.totalPayment;
-    }
-}
-
-struct LoanForm {
-    uint256 amount;
-    uint8 installments;  // cuantos abonos?
-    uint16 apy;         // as basis point 100% == 100_00
-    uint32 duration;    // in seconds
-    uint256 attachedCollateral;
-}
 
 /// CDP collateral debt possition
 
 /// @title Mercado Santa Fe - Collateralize asset A and get asset B credits.
 /// Lend asset B and get APY on asset B or, in liquidations, in collateral.
-/// @author Centauri devs team
-contract MercadoSantaFe is ERC4626 {
+/// @author Centauri devs team ✨
+contract MercadoSantaFe {
 
     using SafeERC20 for IERC20;
     using Math for uint256;
@@ -82,7 +42,9 @@ contract MercadoSantaFe is ERC4626 {
 
     uint16 private constant BASIS_POINTS = 100_00; // 100.00%
 
-    address public immutable collateral;   // immutable
+    IERC20 public immutable collateral;
+    IBodegaDeChocolates public immutable bodega;
+
     address public immutable creditAsset ; // immutable
 
     /// @dev Amount is in pesos.
@@ -100,6 +62,7 @@ contract MercadoSantaFe is ERC4626 {
 
     uint32 public constant MAX_DURATION = 365 days;
     uint32 public constant MIN_DURATION = 1 weeks;
+    uint32 private constant MAX_TIME_BETWEEN_INSTALLS = (4 * 1 weeks); // aprox 1 month.
 
     /// Storage -------------------------------------------------------------------------
 
@@ -116,24 +79,28 @@ contract MercadoSantaFe is ERC4626 {
     mapping (uint256 => Loan) public loans;
 
 
-    uint256 public availableAsset; // ready to be borrowed.
-    uint256 public totalInCDP;     // lock in a loan, in pesos
 
-    /// Errors & events ---
+    /// Errors & events -----------------------------------------------------------------
 
     event Withdrawal(uint amount, uint when);
 
+    error InvalidLoanAmount();
+    error InvalidLoanInstallments();
+    error InvalidLoanAPY();
+    error InvalidLoanDuration();
     error InvalidCollateral(address _token);
     error InvalidInput();
     error NotEnoughBalance();
     error DoNotLeaveDust(uint256 _change);
     error NotEnoughLiquidity();
+    error MaxLoansByUser();
 
     constructor(
-        address _collateral,
-        address _asset // pesos
-    ) ERC4626(IERC20(_asset)) ERC20("Mercado: mpETH <> XOC alphaV1", "MSF0001") {
+        IERC20 _collateral,
+        IBodegaDeChocolates _bodega
+    ) {
         collateral = _collateral;
+        bodega = _bodega;
 
         nextLoanId = 1; // loan-id 0 means no loan at all.
     }
@@ -148,108 +115,10 @@ contract MercadoSantaFe is ERC4626 {
         }
     }
 
-    function totalAssets() public view override returns (uint256) {
-        return availableAsset + totalInCDP;
-    }
 
-    /// Lending Pesos -------------------------------------------------------------------
 
-    /** @dev See {IERC4626-deposit}. */
-    function deposit(uint256 assets, address receiver) public override returns (uint256) {
-        uint256 maxAssets = maxDeposit(receiver);
-        if (assets > maxAssets) {
-            revert ERC4626ExceededMaxDeposit(receiver, assets, maxAssets);
-        }
 
-        uint256 shares = previewDeposit(assets);
-        _deposit(_msgSender(), receiver, assets, shares);
-
-        return shares;
-    }
-
-    /** @dev See {IERC4626-mint}. */
-    function mint(uint256 shares, address receiver) public override returns (uint256) {
-        uint256 maxShares = maxMint(receiver);
-        if (shares > maxShares) {
-            revert ERC4626ExceededMaxMint(receiver, shares, maxShares);
-        }
-
-        uint256 assets = previewMint(shares);
-        _deposit(_msgSender(), receiver, assets, shares);
-
-        return assets;
-    }
-
-    /// @dev Deposit/mint common workflow.
-    function _deposit(address caller, address receiver, uint256 assets, uint256 shares) internal override {
-        // If _asset is ERC-777, `transferFrom` can trigger a reentrancy BEFORE the transfer happens through the
-        // `tokensToSend` hook. On the other hand, the `tokenReceived` hook, that is triggered after the transfer,
-        // calls the vault, which is assumed not malicious.
-        //
-        // Conclusion: we need to do the transfer before we mint so that any reentrancy would happen before the
-        // assets are transferred and before the shares are minted, which is a valid state.
-        // slither-disable-next-line reentrancy-no-eth
-        SafeERC20.safeTransferFrom(IERC20(asset()), caller, address(this), assets);
-        _mint(receiver, shares);
-
-        /// updating global state.
-        availableAsset += assets;
-
-        emit Deposit(caller, receiver, assets, shares);
-    }
-
-    // withdraw is never that simple !
-    // /// @dev Withdraw/redeem common workflow.
-    // function _withdraw(
-    //     address caller,
-    //     address receiver,
-    //     address owner,
-    //     uint256 assets,
-    //     uint256 shares
-    // ) internal override {
-    //     if (caller != owner) {
-    //         _spendAllowance(owner, caller, shares);
-    //     }
-
-    //     // If _asset is ERC-777, `transfer` can trigger a reentrancy AFTER the transfer happens through the
-    //     // `tokensReceived` hook. On the other hand, the `tokensToSend` hook, that is triggered before the transfer,
-    //     // calls the vault, which is assumed not malicious.
-    //     //
-    //     // Conclusion: we need to do the transfer after the burn so that any reentrancy would happen after the
-    //     // shares are burned and after the assets are transferred, which is a valid state.
-    //     _burn(owner, shares);
-    //     SafeERC20.safeTransfer(_asset, receiver, assets);
-
-    //     emit Withdraw(caller, receiver, owner, assets, shares);
-    // }
-
-    //     /** @dev See {IERC4626-withdraw}. */
-    // function withdraw(uint256 assets, address receiver, address owner) public override returns (uint256) {
-    //     uint256 maxAssets = maxWithdraw(owner);
-    //     if (assets > maxAssets) {
-    //         revert ERC4626ExceededMaxWithdraw(owner, assets, maxAssets);
-    //     }
-
-    //     uint256 shares = previewWithdraw(assets);
-    //     _withdraw(_msgSender(), receiver, owner, assets, shares);
-
-    //     return shares;
-    // }
-
-    // /** @dev See {IERC4626-redeem}. */
-    // function redeem(uint256 shares, address receiver, address owner) public override returns (uint256) {
-    //     uint256 maxShares = maxRedeem(owner);
-    //     if (shares > maxShares) {
-    //         revert ERC4626ExceededMaxRedeem(owner, shares, maxShares);
-    //     }
-
-    //     uint256 assets = previewRedeem(shares);
-    //     _withdraw(_msgSender(), receiver, owner, assets, shares);
-
-    //     return assets;
-    // }
-
-    /// Collateral | Borrowing Pesos ----------------------------------------------------
+    /// Managing the Collateral ---------------------------------------------------------
 
     function depositCollateral(address _to, uint256 _amount) external {
         if (_to == address(0)) revert InvalidInput();
@@ -280,27 +149,67 @@ contract MercadoSantaFe is ERC4626 {
     }
 
 
-    modifier strictValidation(LoanForm memory _loan) {
+    /// Borrowing Pesos 🪙 ---------------------------------------------------------------
+
+    function borrow(LoanForm memory _form) external {
+        Loan memory newLoan = _convertToLoan(_form, msg.sender); // Revert if _form is invalid.
+        uint256 loanId = nextLoanId++;
+
+        uint256 balance = users[msg.sender].balanceCollat;
+
+        uint256 collateralTotalValue = fromETHtoPeso(balance);
+        uint256 maxBorrow = collateralTotalValue.mulDiv(85_00, 100_00); // LTV
+        require(_form.amount <= maxBorrow);
+
+        // uint256 availableForNext = maxBorrow > debt ? maxBorrow - debt : 0;
+
+        // if (availableForNext < _loan._amount) revert InvalidInput();
+
+        /// AT THIS POINT THE LOAN SHOULD BE 100% VALIDATED.
+        
+
+        User storage user = users[msg.sender];
+
+
+
+        /// FIND the first available loan id
+        _assignNewLoanTo(user, loanId); // Revert if the user has the max number of loans already.
+
+        loans[loanId] = newLoan;
+
+
+        _activeUsers.add(msg.sender);
+
+        // lock assets
+        _lockCollateral(user, newLoan);
+
+        // doTransferOut(asset(), owner, newLoan.amount); // send pesos
+
+
+
+
+    }
+
+
+    function _validateLoan(Loan memory _loan) internal view {
         if (_loan.amount <= availableAsset) revert NotEnoughLiquidity();
 
-        if (_loan.amount > MAX_CREDIT_AMOUNT) revert InvalidInput();
-        if (_loan.amount < MIN_CREDIT_AMOUNT) revert InvalidInput();
+        if (_loan.amount > MAX_CREDIT_AMOUNT) revert InvalidLoanAmount();
+        if (_loan.amount < MIN_CREDIT_AMOUNT) revert InvalidLoanAmount();
 
-        if (_loan.installments > MAX_INSTALLMENTS) revert InvalidInput();
-        if (_loan.installments < MIN_INSTALLMENTS) revert InvalidInput();
+        if (_loan.installments > MAX_INSTALLMENTS) revert InvalidLoanInstallments();
+        if (_loan.installments < MIN_INSTALLMENTS) revert InvalidLoanInstallments();
 
-        // if (_loan._duration / _loan.installments > MAX_TIME_BETWEEN_INSTALLS) revert InvalidInput();
-        // _loan.intervalDuration();
+        require(_loan.intervalDuration() >= MAX_TIME_BETWEEN_INSTALLS); /// check after updating the value.
 
-        if (_loan.apy > MAX_APY_BP) revert InvalidInput();
-        if (_loan.apy < MIN_APY_BP) revert InvalidInput();
+        if (_loan.apy > MAX_APY_BP) revert InvalidLoanAPY();
+        if (_loan.apy < MIN_APY_BP) revert InvalidLoanAPY();
 
-        if (_loan.duration > MAX_DURATION) revert InvalidInput();
-        if (_loan.duration < MIN_DURATION) revert InvalidInput();
+        if (_loan.duration > MAX_DURATION) revert InvalidLoanDuration();
+        if (_loan.duration < MIN_DURATION) revert InvalidLoanDuration();
 
         /// TODO: CHECK A RELATION BETWEEN APY AND DURATION + TOTAL_LIQUIDITY.
 
-        _;
     }
 
     function _loanProgress(Loan memory _loan) internal view returns (uint256) {
@@ -315,14 +224,7 @@ contract MercadoSantaFe is ERC4626 {
         
     }
 
-    /// @param maturedDebt – implies the debt has reached its due date.
-    /// @param nextInstallment – focuses on the fact that this is the next payment to be made.
-    /// @param remainingDebt – clearly conveys that this is what’s left after payments.
-    struct LoanDebtStatus {
-        uint256 maturedDebt; // in pesos
-        uint256 nextInstallment; // in pesos
-        uint256 remainingDebt; // in pesos
-    }
+
 
     function _removeDecimals(uint256 _payment) internal returns (uint256) {
         return (_payment / 10 ** decimals()) * 10 ** decimals();
@@ -351,6 +253,12 @@ contract MercadoSantaFe is ERC4626 {
         // payment = _removeDecimals(payment);
 
         uint256 whereAmI = _getCurrentInstallment(_loan);
+
+        console.log("today: ", today);
+        console.log("intervalDuration: ", intervalDuration);
+        console.log("grandDebt: ", grandDebt);
+        console.log("payment: ", payment);
+        console.log("whereAmI: ", whereAmI);
 
         if (whereAmI == 0) {
             return LoanDebtStatus(
@@ -398,39 +306,20 @@ contract MercadoSantaFe is ERC4626 {
         
     }
 
-    function borrow(LoanForm memory _loan) external strictValidation(_loan) {
+    
 
-        uint256 userCollat = users[msg.sender].balanceCollat;
-
-        uint256 collateralTotalValue = fromETHtoPeso(userCollat);
-        uint256 maxBorrow = collateralTotalValue.mulDiv(85_00, 100_00); // LTV
-
-        // uint256 debt = users[msg.sender].debt;
-
-        // uint256 availableForNext = maxBorrow > debt ? maxBorrow - debt : 0;
-
-        // if (availableForNext < _loan._amount) revert InvalidInput();
-
-        /// AT THIS POINT THE LOAN SHOULD BE 100% VALIDATED.
-        
-        _createNewLoan(nextLoanId, _loan, msg.sender);
-
-
-
-
-    }
-
-    function convertToLoan(LoanForm memory loanForm, address owner) public view returns (Loan memory) {
-        return Loan({
-            owner: owner,
-            amount: loanForm.amount,
+    function _convertToLoan(LoanForm memory _loanForm, address _owner) internal view returns (Loan memory _loan) {
+        _loan = Loan({
+            owner: _owner,
+            amount: _loanForm.amount,
             totalPayment: 0,
-            installments: loanForm.installments,
-            apy: loanForm.apy,
+            installments: _loanForm.installments,
+            apy: _loanForm.apy,
             createdAt: block.timestamp,
-            duration: loanForm.duration,
-            attachedCollateral: loanForm.attachedCollateral
+            duration: _loanForm.duration,
+            attachedCollateral: _loanForm.attachedCollateral
         });
+        _validateLoan(_loan);
     }
 
     function _assignNewLoanTo(User storage _user, uint256 _newLoanId) private {
@@ -442,27 +331,11 @@ contract MercadoSantaFe is ERC4626 {
             }
         }
         // "No more available loans"
-        revert InvalidInput();
+        revert MaxLoansByUser();
     }
 
-    function _createNewLoan(uint256 _newLoanId, LoanForm memory _form, address owner) internal {
-        User storage user = users[owner];
+    function _createNewLoan(uint256 _newLoanId, LoanForm memory _form, address owner) internal{
 
-
-        Loan memory newLoan = convertToLoan(_form, owner);
-
-        loans[_newLoanId] = newLoan;
-
-        /// FIND the first available loan id
-        // if (_getUserActiveLoans(user) == MAX_LOANS_BY_USER) revert InvalidInput(); // no new loans for owner
-        _assignNewLoanTo(user, _newLoanId); // see code line above
-
-        _activeUsers.add(owner);
-
-        // lock assets
-        _lockCollateral(user, newLoan);
-
-        doTransferOut(asset(), owner, newLoan.amount); // send pesos
 
     }
 
