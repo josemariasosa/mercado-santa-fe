@@ -44,26 +44,26 @@ contract MercadoSantaFe {
     uint256 private constant GRACE_PERIOD = 5 days; // 5 natural days
     uint16 private constant BASIS_POINTS = 100_00; // 100.00%
 
-    IERC20 public immutable collateral;
+    address public immutable collateral;
     IBodegaDeChocolates public immutable bodega;
 
     address public immutable creditAsset ; // immutable
 
     /// @dev Amount is in pesos.
-    uint256 public constant MAX_CREDIT_AMOUNT = 10_000 * 10**18;
-    uint256 public constant MIN_CREDIT_AMOUNT =  1_000 * 10**18;
-    uint256 public constant FIXED_LOAN_FEE = 100 * 10**18; // Can be zero.
+    uint256 private constant MAX_CREDIT_AMOUNT = 10_000 * 10**18;
+    uint256 private constant MIN_CREDIT_AMOUNT =  1_000 * 10**18;
+    uint256 private constant FIXED_LOAN_FEE = 100 * 10**18; // Can be zero.
 
     /// @dev How many installments?
-    uint8 public constant MAX_INSTALLMENTS = 52;
-    uint8 public constant MIN_INSTALLMENTS = 1;
+    uint8 private constant MAX_INSTALLMENTS = 52;
+    uint8 private constant MIN_INSTALLMENTS = 1;
 
     /// @dev APY is always in basis point 8.00% == 800;
-    uint16 public constant MAX_APY_BP = type(uint16).max;
-    uint16 public constant MIN_APY_BP = 8_00;
+    uint16 private constant MAX_APY_BP = type(uint16).max;
+    uint16 private constant MIN_APY_BP = 8_00;
 
-    uint32 public constant MAX_DURATION = 365 days;
-    uint32 public constant MIN_DURATION = 1 weeks;
+    uint32 private constant MAX_DURATION = 365 days;
+    uint32 private constant MIN_DURATION = 1 weeks;
     uint32 private constant MAX_TIME_BETWEEN_INSTALLS = (4 * 1 weeks); // aprox 1 month.
 
     /// Storage -------------------------------------------------------------------------
@@ -93,6 +93,7 @@ contract MercadoSantaFe {
     error InvalidLoanAPY();
     error InvalidLoanDuration();
     error InvalidCollateral(address _token);
+    error LoanIsFullyPaid();
     error InvalidInput();
     error NotEnoughBalance();
     error DoNotLeaveDust(uint256 _change);
@@ -104,7 +105,7 @@ contract MercadoSantaFe {
         IERC20 _collateral,
         IBodegaDeChocolates _bodega
     ) {
-        collateral = _collateral;
+        collateral = address(_collateral);
         bodega = _bodega;
 
         nextLoanId = 1; // loan-id 0 means no loan at all.
@@ -161,8 +162,14 @@ contract MercadoSantaFe {
         Loan memory newLoan = _convertToLoan(_form, msg.sender); // Revert if _form is invalid.
         uint256 loanId = nextLoanId++;
 
+        console.log(user.balanceCollat);
+
         uint256 collateralTotalValue = fromETHtoPeso(user.balanceCollat);
         uint256 maxBorrow = collateralTotalValue.mulDiv(85_00, 100_00); // LTV
+
+        console.log(collateralTotalValue);
+        console.log(maxBorrow);
+
         require(_form.amount <= maxBorrow);
 
         // TODO
@@ -189,7 +196,7 @@ contract MercadoSantaFe {
 
 
     function _validateLoan(Loan memory _loan) internal view {
-        if (_loan.amount <= availableAsset) revert NotEnoughLiquidity();
+        if (_loan.amount > bodega.availableAsset()) revert NotEnoughLiquidity();
 
         if (_loan.amount > MAX_CREDIT_AMOUNT) revert InvalidLoanAmount();
         if (_loan.amount < MIN_CREDIT_AMOUNT) revert InvalidLoanAmount();
@@ -221,19 +228,31 @@ contract MercadoSantaFe {
         
     }
 
-
-
-    function _removeDecimals(uint256 _payment) internal returns (uint256) {
-        return (_payment / 10 ** decimals()) * 10 ** decimals();
+    function getIntervalDuration(uint256 _loanId) external view returns (uint256) {
+        return loans[_loanId].intervalDuration();
     }
+
+    function getInstallment(uint256 _loanId) external view returns (uint256) {
+        return _getCurrentInstallment(loans[_loanId]);
+
+    }
+
+
+
+    // function _removeDecimals(uint256 _payment) internal returns (uint256) {
+    //     return (_payment / 10 ** decimals()) * 10 ** decimals();
+    // }
 
     /// @return 0 if the first installment isn't due.
     ///         1 at this point, totalPayment >= payment * 1;
     ///         2 at this point, totalPayment >= payment * 2;
     ///         if n == (_loan.installments - 1) last installment must cover amount + amountInterest + PENALTY; to unlock the collateral.
     function _getCurrentInstallment(Loan memory _loan) internal view returns (uint256) {
-        for (uint i = 1; i < _loan.installments; i++) {
-            if (block.timestamp <= _loan.createdAt + (_loan.intervalDuration() * i)) {
+        for (uint i = 0; i < _loan.installments; i++) {
+
+            console.log("_loan.createdAt", _loan.createdAt);
+            console.log("block.timestamp", block.timestamp);
+            if (block.timestamp <= _loan.createdAt + (_loan.intervalDuration() * i + 1)) {
                 return i;
             }
         }
@@ -256,11 +275,11 @@ contract MercadoSantaFe {
         uint256 whereAmI = _getCurrentInstallment(_loan);
 
 
-        // console.log("today: ", today);
-        // console.log("intervalDuration: ", intervalDuration);
-        // console.log("grandDebt: ", grandDebt);
-        // console.log("payment: ", payment);
-        // console.log("whereAmI: ", whereAmI);
+        console.log("today: ", today);
+        console.log("intervalDuration: ", intervalDuration);
+        console.log("grandDebt: ", grandDebt);
+        console.log("payment: ", payment);
+        console.log("whereAmI: ", whereAmI);
 
         uint256 totalDebt;
         uint256 remainingDebt;
@@ -278,7 +297,7 @@ contract MercadoSantaFe {
             return LoanDebtStatus({
                 maturedDebt: _loan.totalPayment == totalDebt ? 0 : remainingDebt,
                 nextInstallment: _loan.totalPayment >= totalDebt ? 0 : totalDebt,
-                remainingDebt
+                remainingDebt: remainingDebt
             });
         } else {
             totalDebt = payment * whereAmI;

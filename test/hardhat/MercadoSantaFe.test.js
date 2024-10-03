@@ -55,7 +55,7 @@ describe("Mercado Santa Fe 🏗️ - Borrow and Lending protocol ----", function
         amount: ethers.parseUnits("1234", 18),
         totalPayment: 0,
         installments: 3,
-        apy: 500,
+        apy: 800,
         createdAt: await MercadoSantaFeContract.test__getNow(),
         duration: 3 * 4 * 7 * 24 * 60 * 60, // aprox 3 months
         attachedCollateral: ethers.parseUnits("500", 18),
@@ -67,6 +67,18 @@ describe("Mercado Santa Fe 🏗️ - Borrow and Lending protocol ----", function
 
       console.log(await MercadoSantaFeContract.test__loanDebt(loan));
 
+      let _status;
+      for (let i = 0; i < 3; i++) {
+        if (i == 0) {
+          // we shoud be in installment 0.
+          expect(await MercadoSantaFeContract.getInstallment(1)).to.be.equal(0);
+          _status = await MercadoSantaFeContract.test__loanDebt(loan);
+          let maturedDebt =  _status.maturedDebt; // in pesos
+          let nextInstallment = _status.nextInstallment; // in pesos
+          let remainingDebt = _status[2];
+          // expect(await MercadoSantaFeContract.test__loanDebt(loan)).to.be.equal(0);
+        }
+      }
 
 
     });

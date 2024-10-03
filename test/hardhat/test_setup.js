@@ -1,8 +1,11 @@
 const { expect } = require("chai");
 const { ethers, upgrades } = require("hardhat");
 
+MLARGE = ethers.parseEther("1000000000000");
+
 async function deployProtocolFixture() {
   const MercadoSantaFe = await ethers.getContractFactory("MercadoSantaFeHarness");
+  const BodegaDeChocolates = await ethers.getContractFactory("BodegaDeChocolates");
   const MPETHToken = await ethers.getContractFactory("MPETHToken");
   const XOCToken = await ethers.getContractFactory("XOCToken");
 
@@ -23,9 +26,11 @@ async function deployProtocolFixture() {
 
   /// Deploying markets.
 
+  const BodegaContract = await BodegaDeChocolates.deploy(XOCTokenContract.target)
+
   const MercadoSantaFeContract = await MercadoSantaFe.deploy(
     MPETHTokenContract.target,
-    XOCTokenContract.target
+    BodegaContract.target
   );
   await MercadoSantaFeContract.waitForDeployment();
 
@@ -77,8 +82,34 @@ async function deployProtocolFixture() {
   await XOCTokenContract.allocateTo(bob.address, ethers.parseUnits("11000", 18));
   await XOCTokenContract.allocateTo(carl.address, ethers.parseUnits("11000", 18));
 
+  /// Deposit liquidity.
+  await XOCTokenContract.connect(alice).approve(BodegaContract.target, MLARGE);
+  await BodegaContract.connect(alice).deposit(ethers.parseUnits("31000", 18), alice.address);
+
+  await MPETHTokenContract.connect(alice).approve(MercadoSantaFeContract.target, MLARGE);
+  await MercadoSantaFeContract.connect(alice).depositCollateral(alice.address, ethers.parseEther("1"));
+
+  /// Create first loan.
+  await MercadoSantaFeContract.connect(alice).borrow(
+    [
+      // uint256 amount;
+      ethers.parseUnits("1234", 18),
+      // uint8 installments;
+      3,
+      // uint16 apy;
+      800,
+      // uint32 duration;
+      3 * 4 * 7 * 24 * 60 * 60, // approx 3 months
+      // uint256 attachedCollateral;
+      ethers.parseUnits("0.5", 18)
+    ]
+  );
+
+  console.log("HOSEJLKJSLKJELKJELS");
+
   return {
     MercadoSantaFeContract,
+    BodegaContract,
     MPETHTokenContract,
     XOCTokenContract,
     owner,
