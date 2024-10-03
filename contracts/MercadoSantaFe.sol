@@ -111,15 +111,29 @@ contract MercadoSantaFe {
         nextLoanId = 1; // loan-id 0 means no loan at all.
     }
 
-    function _getUserActiveLoans(User memory _user) internal returns (uint8 _res) {
-        uint256[MAX_LOANS_BY_USER] memory loanIds = _user.loanIds;
-        
-        for (uint i; i < MAX_LOANS_BY_USER; i++) {
-            if (loanIds[i] > 0) {
-                _res++;
-            }
-        }
+    /// Public View functions -----------------------------------------------------------
+
+    /// @return _duration of the loan, divided by the number of intervals.
+    function getIntervalDuration(uint256 _loanId) external view returns (uint256) {
+        return loans[_loanId].intervalDuration();
     }
+
+    function getInstallment(uint256 _loanId) external view returns (uint256) {
+        return _getCurrentInstallment(loans[_loanId]);
+
+    }
+
+    /// @dev max active loans per user is given by `MAX_LOANS_BY_USER`.
+    function getActiveLoans(address _account) external view returns (uint8) {
+        return _getUserActiveLoans(users[_account]);
+    }
+
+    /// @dev total debt distributed on all the loans.
+    function getUserDebt(address _account) external view returns (uint256) {
+        User memory _user = users[_account];
+    }
+
+
 
 
 
@@ -228,14 +242,7 @@ contract MercadoSantaFe {
         
     }
 
-    function getIntervalDuration(uint256 _loanId) external view returns (uint256) {
-        return loans[_loanId].intervalDuration();
-    }
 
-    function getInstallment(uint256 _loanId) external view returns (uint256) {
-        return _getCurrentInstallment(loans[_loanId]);
-
-    }
 
 
 
@@ -380,17 +387,30 @@ contract MercadoSantaFe {
         _user.balanceCollat -= _loan.attachedCollateral;
     }
 
-    // function getUserDebt(address _account) public returns (uint256) {
-    //     users[_account].debt;
-    // }
 
 
+
+
+
+
+
+
+
+    /// PRIVATE PARTY 🎛️ ----------------------------------------------------------------
+
+    /// TODO: use real oracle.
     /// @dev The price in base asset pesos, of the collateral (mpETH).
-    function fromETHtoPeso(uint256 _amount) internal returns (uint256 _price) {
+    function fromETHtoPeso(uint256 _amount) internal pure returns (uint256 _price) {
         _price = _amount.mulDiv(10000, 1);
     }
 
-
+    function _getUserActiveLoans(User memory _user) internal pure returns (uint8 _res) {
+        uint256[MAX_LOANS_BY_USER] memory loanIds = _user.loanIds;
+        
+        for (uint i; i < MAX_LOANS_BY_USER; i++) {
+            if (loanIds[i] > 0) _res++;
+        }
+    }
 
     function doTransferIn(address _asset, address _from, uint256 _amount) private {
         IERC20(_asset).safeTransferFrom(_from, address(this), _amount);
@@ -399,6 +419,4 @@ contract MercadoSantaFe {
     function doTransferOut(address _asset, address _to, uint256 _amount) private {
         IERC20(_asset).safeTransfer(_to, _amount);
     }
-
-
 }

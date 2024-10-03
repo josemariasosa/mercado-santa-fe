@@ -50,22 +50,22 @@ describe("Mercado Santa Fe 🏗️ - Borrow and Lending protocol ----", function
         carl,
       } = await loadFixture(deployProtocolFixture);
 
-      const loan = {
-        owner: alice.address,
-        amount: ethers.parseUnits("1234", 18),
-        totalPayment: 0,
-        installments: 3,
-        apy: 800,
-        createdAt: await MercadoSantaFeContract.test__getNow(),
-        duration: 3 * 4 * 7 * 24 * 60 * 60, // aprox 3 months
-        attachedCollateral: ethers.parseUnits("500", 18),
-      };
+      // const loan = {
+      //   owner: alice.address,
+      //   amount: ethers.parseUnits("1234", 18),
+      //   totalPayment: 0,
+      //   installments: 3,
+      //   apy: 800,
+      //   createdAt: await MercadoSantaFeContract.test__getNow(),
+      //   duration: 3 * 4 * 7 * 24 * 60 * 60, // aprox 3 months
+      //   attachedCollateral: ethers.parseUnits("500", 18),
+      // };
 
-      await MercadoSantaFeContract.test__validateLoan(loan);
+      // await MercadoSantaFeContract.test__validateLoan(loan);
 
-      console.log(loan);
+      // console.log(loan);
 
-      console.log(await MercadoSantaFeContract.test__loanDebt(loan));
+      // console.log(await MercadoSantaFeContract.test__loanDebt(loan));
 
       let _status;
       for (let i = 0; i < 3; i++) {
@@ -76,6 +76,14 @@ describe("Mercado Santa Fe 🏗️ - Borrow and Lending protocol ----", function
           let maturedDebt =  _status.maturedDebt; // in pesos
           let nextInstallment = _status.nextInstallment; // in pesos
           let remainingDebt = _status[2];
+
+          expect(maturedDebt).to.be.equal(0);
+          expect(nextInstallment).to.be.equal() = _status.nextInstallment; // in pesos
+
+          console.log("osito cup")
+          console.log(maturedDebt)
+          console.log(nextInstallment)
+          console.log(remainingDebt)
           // expect(await MercadoSantaFeContract.test__loanDebt(loan)).to.be.equal(0);
         }
       }
