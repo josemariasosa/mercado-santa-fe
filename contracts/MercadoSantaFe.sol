@@ -129,8 +129,11 @@ contract MercadoSantaFe {
     }
 
     /// @dev total debt distributed on all the loans.
-    function getUserDebt(address _account) external view returns (uint256) {
+    function getUserDebt(address _account) external view returns (uint256 _amount) {
         User memory _user = users[_account];
+        for (uint i; i < _user.loanIds.length; i++) {
+            if (i > 0) _amount += loans[i].amount;
+        }
     }
 
 
