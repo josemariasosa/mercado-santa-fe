@@ -41,6 +41,20 @@ library LoanLib {
     function isFullyPaid(Loan memory _self) internal pure returns (bool) {
         return grandDebt(_self) == _self.totalPayment;
     }
+
+    /// @return 0 if the first installment isn't due.
+    ///         1 at this point, totalPayment >= payment * 1;
+    ///         2 at this point, totalPayment >= payment * 2;
+    ///         if n == (_loan.installments - 1)
+    ///         last installment must cover amount + amountInterest + PENALTY; to unlock the collateral.
+    function getInstallment(Loan memory _self) internal view returns (uint256) {
+        for (uint i = 0; i < _self.installments; i++) {
+            if (block.timestamp <= _self.createdAt + (intervalDuration(_self) * i + 1)) {
+                return i;
+            }
+        }
+        return _self.installments;
+    }
 }
 
 struct LoanForm {

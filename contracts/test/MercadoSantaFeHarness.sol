@@ -15,8 +15,8 @@ contract MercadoSantaFeHarness is MercadoSantaFe {
         _bodega
     ) {}
 
-    function test__loanDebt(Loan memory _loan) external view returns (LoanDebtStatus memory _status) {
-        return _loanDebt(_loan);
+    function test__loanDebtStatus(Loan memory _loan) external view returns (LoanDebtStatus memory _status) {
+        return _loanDebtStatus(_loan);
     }
 
     function test__getNow() external view returns (uint256) {

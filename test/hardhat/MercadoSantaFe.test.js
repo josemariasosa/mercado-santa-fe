@@ -39,9 +39,67 @@ describe("Mercado Santa Fe 🏗️ - Borrow and Lending protocol ----", function
       // expect(await BorrowVerdeContract.liquidationPenaltyBp()).to.be.equal(500);
     });
 
-    it("Invalid basis points limits MUST revert.", async function () {
+    it("Initialization parameters are correct.", async function () {
       const {
         MercadoSantaFeContract,
+        MPETHTokenContract,
+        BodegaContract,
+        XOCTokenContract,
+        owner,
+        alice,
+        bob,
+        carl,
+      } = await loadFixture(deployProtocolFixture);
+
+      expect(await BodegaContract.totalAssets()).to.be.equal(0);
+
+      // // const loan = {
+      // //   owner: alice.address,
+      // //   amount: ethers.parseUnits("1234", 18),
+      // //   totalPayment: 0,
+      // //   installments: 3,
+      // //   apy: 800,
+      // //   createdAt: await MercadoSantaFeContract.test__getNow(),
+      // //   duration: 3 * 4 * 7 * 24 * 60 * 60, // aprox 3 months
+      // //   attachedCollateral: ethers.parseUnits("500", 18),
+      // // };
+
+      // // await MercadoSantaFeContract.test__validateLoan(loan);
+
+      // // console.log(loan);
+
+      // // console.log(await MercadoSantaFeContract.test__loanDebt(loan));
+
+      // let _status;
+      // for (let i = 0; i < 3; i++) {
+      //   if (i == 0) {
+      //     // we shoud be in installment 0.
+      //     expect(await MercadoSantaFeContract.getInstallment(1)).to.be.equal(0);
+      //     _status = await MercadoSantaFeContract.test__loanDebt(loan);
+      //     let maturedDebt =  _status.maturedDebt; // in pesos
+      //     let nextInstallment = _status.nextInstallment; // in pesos
+      //     let remainingDebt = _status[2];
+
+      //     expect(maturedDebt).to.be.equal(0);
+      //     expect(nextInstallment).to.be.equal() = _status.nextInstallment; // in pesos
+
+      //     console.log("osito cup")
+      //     console.log(maturedDebt)
+      //     console.log(nextInstallment)
+      //     console.log(remainingDebt)
+      //     // expect(await MercadoSantaFeContract.test__loanDebt(loan)).to.be.equal(0);
+      //   }
+      // }
+
+
+    });
+  });
+
+  describe("Getting my first loan", function () {
+    it("Loan parameters must be correct.", async function () {
+      const {
+        MercadoSantaFeContract,
+        BodegaContract,
         MPETHTokenContract,
         XOCTokenContract,
         owner,
@@ -50,35 +108,45 @@ describe("Mercado Santa Fe 🏗️ - Borrow and Lending protocol ----", function
         carl,
       } = await loadFixture(deployProtocolFixture);
 
-      // const loan = {
-      //   owner: alice.address,
-      //   amount: ethers.parseUnits("1234", 18),
-      //   totalPayment: 0,
-      //   installments: 3,
-      //   apy: 800,
-      //   createdAt: await MercadoSantaFeContract.test__getNow(),
-      //   duration: 3 * 4 * 7 * 24 * 60 * 60, // aprox 3 months
-      //   attachedCollateral: ethers.parseUnits("500", 18),
-      // };
+      /// Deposit liquidity.
+      await XOCTokenContract.connect(alice).approve(BodegaContract.target, MLARGE);
+      await BodegaContract.connect(alice).deposit(ethers.parseUnits("31000", 18), alice.address);
 
-      // await MercadoSantaFeContract.test__validateLoan(loan);
+      await MPETHTokenContract.connect(alice).approve(MercadoSantaFeContract.target, MLARGE);
+      await MercadoSantaFeContract.connect(alice).depositCollateral(alice.address, ethers.parseEther("1"));
 
-      // console.log(loan);
+      /// Create first loan.
+      await MercadoSantaFeContract.connect(alice).borrow(
+        [
+          // uint256 amount;
+          ethers.parseUnits("1234", 18),
+          // uint8 installments;
+          3,
+          // uint16 apy;
+          800,
+          // uint32 duration;
+          3 * 4 * 7 * 24 * 60 * 60, // approx 3 months
+          // uint256 attachedCollateral;
+          ethers.parseUnits("0.5", 18)
+        ]
+      );
 
-      // console.log(await MercadoSantaFeContract.test__loanDebt(loan));
+      expect(await MercadoSantaFeContract.loanPrincipal()).to.be.equal(ethers.parseUnits("1234", 18));
+
+
 
       let _status;
       for (let i = 0; i < 3; i++) {
         if (i == 0) {
           // we shoud be in installment 0.
           expect(await MercadoSantaFeContract.getInstallment(1)).to.be.equal(0);
-          _status = await MercadoSantaFeContract.test__loanDebt(loan);
+          _status = await MercadoSantaFeContract.getLoanDebtStatus(1);
           let maturedDebt =  _status.maturedDebt; // in pesos
           let nextInstallment = _status.nextInstallment; // in pesos
           let remainingDebt = _status[2];
 
           expect(maturedDebt).to.be.equal(0);
-          expect(nextInstallment).to.be.equal() = _status.nextInstallment; // in pesos
+          // expect(nextInstallment).to.be.equal() = _status.nextInstallment; // in pesos
 
           console.log("osito cup")
           console.log(maturedDebt)
@@ -87,6 +155,73 @@ describe("Mercado Santa Fe 🏗️ - Borrow and Lending protocol ----", function
           // expect(await MercadoSantaFeContract.test__loanDebt(loan)).to.be.equal(0);
         }
       }
+
+
+      // for (i = 0; i < 100; i++) {
+      //   await time.increase(ONE_DAY_IN_SECS_PLUS);
+      //   await BorrowVerdeContract.accrue();
+      // }
+
+      // expect(await BorrowVerdeContract.owner()).to.be.equal(owner.address);
+      // expect(await BorrowVerdeContract.verdeToken()).to.be.equal(VerdeTokenContract.target);
+      // expect(await BorrowVerdeContract.collatAsset()).to.be.equal(MPETHTokenContract.target);
+      // expect(await BorrowVerdeContract.collatToUsdOracle()).to.be.equal(MPETHPriceFeedContract.target);
+      // expect(await BorrowVerdeContract.treasuryVault()).to.be.equal(TreasuryVaultContract.target);
+      // expect(await BorrowVerdeContract.minCollatAmount()).to.be.equal(ethers.parseEther("0.01"));
+
+      // expect(await BorrowVerdeContract.safeLtvBp()).to.be.equal(5000);
+      // expect(await BorrowVerdeContract.liquidationLtvBp()).to.be.equal(7000);
+      // expect(await BorrowVerdeContract.liquidationPenaltyBp()).to.be.equal(500);
+    });
+
+    it("Invalid basis points limits MUST revert.", async function () {
+      // const {
+      //   MercadoSantaFeContract,
+      //   MPETHTokenContract,
+      //   XOCTokenContract,
+      //   owner,
+      //   alice,
+      //   bob,
+      //   carl,
+      // } = await loadFixture(deployProtocolFixture);
+
+      // // const loan = {
+      // //   owner: alice.address,
+      // //   amount: ethers.parseUnits("1234", 18),
+      // //   totalPayment: 0,
+      // //   installments: 3,
+      // //   apy: 800,
+      // //   createdAt: await MercadoSantaFeContract.test__getNow(),
+      // //   duration: 3 * 4 * 7 * 24 * 60 * 60, // aprox 3 months
+      // //   attachedCollateral: ethers.parseUnits("500", 18),
+      // // };
+
+      // // await MercadoSantaFeContract.test__validateLoan(loan);
+
+      // // console.log(loan);
+
+      // // console.log(await MercadoSantaFeContract.test__loanDebt(loan));
+
+      // let _status;
+      // for (let i = 0; i < 3; i++) {
+      //   if (i == 0) {
+      //     // we shoud be in installment 0.
+      //     expect(await MercadoSantaFeContract.getInstallment(1)).to.be.equal(0);
+      //     _status = await MercadoSantaFeContract.test__loanDebt(loan);
+      //     let maturedDebt =  _status.maturedDebt; // in pesos
+      //     let nextInstallment = _status.nextInstallment; // in pesos
+      //     let remainingDebt = _status[2];
+
+      //     expect(maturedDebt).to.be.equal(0);
+      //     expect(nextInstallment).to.be.equal() = _status.nextInstallment; // in pesos
+
+      //     console.log("osito cup")
+      //     console.log(maturedDebt)
+      //     console.log(nextInstallment)
+      //     console.log(remainingDebt)
+      //     // expect(await MercadoSantaFeContract.test__loanDebt(loan)).to.be.equal(0);
+      //   }
+      // }
 
 
     });

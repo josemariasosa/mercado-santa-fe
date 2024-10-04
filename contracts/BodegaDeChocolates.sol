@@ -16,6 +16,8 @@ import "hardhat/console.sol";
 /// @author Centauri devs team ✨
 contract BodegaDeChocolates is ERC4626 {
 
+    using SafeERC20 for IERC20;
+
     uint256 public availableAsset; // ready to be borrowed.
     uint256 public totalInCDP;     // lock in a loan, in pesos
 
@@ -27,7 +29,7 @@ contract BodegaDeChocolates is ERC4626 {
         return availableAsset + totalInCDP;
     }
 
-        /// Lending Pesos -------------------------------------------------------------------
+    /// Lending Pesos -------------------------------------------------------------------
 
     /** @dev See {IERC4626-deposit}. */
     function deposit(uint256 assets, address receiver) public override returns (uint256) {
@@ -71,6 +73,12 @@ contract BodegaDeChocolates is ERC4626 {
         availableAsset += assets;
 
         emit Deposit(caller, receiver, assets, shares);
+    }
+
+    function lend(address _to, uint256 _amount) external /* onlyValidMercado */ {
+        availableAsset -= _amount;
+
+        doTransferOut(asset(), _to, _amount); // send pesos
     }
 
     // withdraw is never that simple !
@@ -124,5 +132,12 @@ contract BodegaDeChocolates is ERC4626 {
     //     return assets;
     // }
 
+    function doTransferIn(address _asset, address _from, uint256 _amount) private {
+        IERC20(_asset).safeTransferFrom(_from, address(this), _amount);
+    }
+
+    function doTransferOut(address _asset, address _to, uint256 _amount) private {
+        IERC20(_asset).safeTransfer(_to, _amount);
+    }
 
 }

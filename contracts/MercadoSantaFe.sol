@@ -113,14 +113,20 @@ contract MercadoSantaFe {
 
     /// Public View functions -----------------------------------------------------------
 
-    /// @return _duration of the loan, divided by the number of intervals.
+    /// @dev Duration of the loan, divided by the number of intervals.
     function getIntervalDuration(uint256 _loanId) external view returns (uint256) {
+        if (_loanId == 0) revert InvalidInput();
         return loans[_loanId].intervalDuration();
     }
 
     function getInstallment(uint256 _loanId) external view returns (uint256) {
-        return _getCurrentInstallment(loans[_loanId]);
+        if (_loanId == 0) revert InvalidInput();
+        return loans[_loanId].getInstallment();
+    }
 
+    function getLoanDebtStatus(uint256 _loanId) external view returns (LoanDebtStatus memory) {
+        if (_loanId == 0) revert InvalidInput();
+        return _loanDebtStatus(loans[_loanId]);
     }
 
     /// @dev max active loans per user is given by `MAX_LOANS_BY_USER`.
@@ -135,11 +141,6 @@ contract MercadoSantaFe {
             if (i > 0) _amount += loans[i].amount;
         }
     }
-
-
-
-
-
 
     /// Managing the Collateral ---------------------------------------------------------
 
@@ -171,7 +172,6 @@ contract MercadoSantaFe {
         doTransferOut(collateral, msg.sender, amountCollat);
     }
 
-
     /// Borrowing Pesos 🪙 ---------------------------------------------------------------
 
     function borrow(LoanForm memory _form) external {
@@ -179,36 +179,27 @@ contract MercadoSantaFe {
         Loan memory newLoan = _convertToLoan(_form, msg.sender); // Revert if _form is invalid.
         uint256 loanId = nextLoanId++;
 
-        console.log(user.balanceCollat);
-
+        // TODO: is this the best way to calculate LTV?
         uint256 collateralTotalValue = fromETHtoPeso(user.balanceCollat);
         uint256 maxBorrow = collateralTotalValue.mulDiv(85_00, 100_00); // LTV
 
-        console.log(collateralTotalValue);
-        console.log(maxBorrow);
-
         require(_form.amount <= maxBorrow);
 
-        // TODO
-        // uint256 availableForNext = maxBorrow > debt ? maxBorrow - debt : 0;
-        // if (availableForNext < _loan._amount) revert InvalidInput();
-
         /// AT THIS POINT THE LOAN SHOULD BE 100% VALIDATED.
-
 
         /// @dev FIND the first available loan id, or revert.
         _assignNewLoanTo(user, loanId); // Revert if the max number of loans.
         loans[loanId] = newLoan;
         _activeUsers.add(msg.sender);
         
-        /// @dev refers to the original amount loaned, before interest is added.
+        // updating storage
         loanPrincipal += newLoan.amount;
 
         // lock assets
         _lockCollateral(user, newLoan);
 
         /// TODO
-        // doTransferOut(asset(), owner, newLoan.amount); // send pesos
+        bodega.lend(msg.sender, newLoan.amount);
     }
 
 
@@ -230,20 +221,18 @@ contract MercadoSantaFe {
         if (_loan.duration < MIN_DURATION) revert InvalidLoanDuration();
 
         /// TODO: CHECK A RELATION BETWEEN APY AND DURATION + TOTAL_LIQUIDITY.
-
     }
 
-    function _loanProgress(Loan memory _loan) internal view returns (uint256) {
-        if (_loan.createdAt <= block.timestamp) return 0;
+    // function _loanProgress(Loan memory _loan) internal view returns (uint256) {
+    //     if (_loan.createdAt <= block.timestamp) return 0;
 
-        uint256 loanEnds = _loan.createdAt + _loan.duration;
-        if (block.timestamp < loanEnds) {
-            uint256 elapsedTime = block.timestamp - _loan.createdAt;
-            return elapsedTime.mulDiv(10**18, _loan.duration);
-        }
-        return 10**18; // 100%
-        
-    }
+    //     uint256 loanEnds = _loan.createdAt + _loan.duration;
+    //     if (block.timestamp < loanEnds) {
+    //         uint256 elapsedTime = block.timestamp - _loan.createdAt;
+    //         return elapsedTime.mulDiv(10**18, _loan.duration);
+    //     }
+    //     return 10**18; // 100%
+    // }
 
 
 
@@ -253,24 +242,10 @@ contract MercadoSantaFe {
     //     return (_payment / 10 ** decimals()) * 10 ** decimals();
     // }
 
-    /// @return 0 if the first installment isn't due.
-    ///         1 at this point, totalPayment >= payment * 1;
-    ///         2 at this point, totalPayment >= payment * 2;
-    ///         if n == (_loan.installments - 1) last installment must cover amount + amountInterest + PENALTY; to unlock the collateral.
-    function _getCurrentInstallment(Loan memory _loan) internal view returns (uint256) {
-        for (uint i = 0; i < _loan.installments; i++) {
 
-            console.log("_loan.createdAt", _loan.createdAt);
-            console.log("block.timestamp", block.timestamp);
-            if (block.timestamp <= _loan.createdAt + (_loan.intervalDuration() * i + 1)) {
-                return i;
-            }
-        }
-        return _loan.installments;
-    }
 
     /// @dev this function consider different scenarios, using the block.timestamp.
-    function _loanDebt(Loan memory _loan) internal view returns (LoanDebtStatus memory _status) {
+    function _loanDebtStatus(Loan memory _loan) internal view returns (LoanDebtStatus memory _status) {
         uint256 today = block.timestamp;
         uint256 intervalDuration = _loan.intervalDuration();
 
@@ -282,7 +257,7 @@ contract MercadoSantaFe {
         /// TODO: It could be nice if the payment is softly rounded.
         // payment = _removeDecimals(payment);
 
-        uint256 whereAmI = _getCurrentInstallment(_loan);
+        uint256 whereAmI = _loan.getInstallment();
 
 
         console.log("today: ", today);
@@ -331,7 +306,7 @@ contract MercadoSantaFe {
 
         doTransferIn(bodega.asset(), msg.sender, _amount);
 
-        LoanDebtStatus memory _status = _loanDebt(loan);
+        LoanDebtStatus memory _status = _loanDebtStatus(loan);
         uint256 remainingDebt = _status.remainingDebt;
         // if (late) remainingDebt += _getPenalty(loan)
 
