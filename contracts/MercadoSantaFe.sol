@@ -1,15 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.27;
 
-import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {ERC4626} from "@openzeppelin/contracts/token/ERC20/extensions/ERC4626.sol";
-import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
-
-import {Loan, LoanDebtStatus, LoanForm, LoanLib} from "./lib/Loan.sol";
 import {IBodegaDeChocolates} from "./interfaces/IBodegaDeChocolates.sol";
+import {Loan, LoanDebtStatus, LoanForm, LoanLib} from "./lib/Loan.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 // Uncomment this line to use console.log
 import "hardhat/console.sol";
@@ -58,8 +56,10 @@ contract MercadoSantaFe {
     uint8 private constant MIN_INSTALLMENTS = 1;
 
     /// @dev APY is always in basis point 8.00% == 800;
-    uint16 private constant MAX_APY_BP = type(uint16).max;
-    uint16 private constant MIN_APY_BP = 8_00;
+    uint16 private constant BASE_APY_BP = 8_00;
+
+    uint16 public constant SAFE_INITIAL_LTV_BP = 60_00;
+    uint16 public constant MAX_INITIAL_LTV_BP = 85_00;
 
     uint32 private constant MAX_DURATION = 365 days;
     uint32 private constant MIN_DURATION = 1 weeks;
@@ -101,7 +101,9 @@ contract MercadoSantaFe {
     error DoNotLeaveDust(uint256 _change);
     error NotEnoughLiquidity();
     error MaxLoansByUser();
+    error InvalidUInt16();
     error PayOnlyWhatYouOwn(uint256 _remainingDebt);
+    error CollateralBellowLtv(uint256 _initialLtv);
 
     constructor(
         IERC20 _collateral,
@@ -154,6 +156,16 @@ contract MercadoSantaFe {
             console.log(loans[_id].totalPayment);
             if (_id > 0) _amount += (loans[_id].grandDebt() - loans[_id].totalPayment);
         }
+    }
+
+    function calculateAPY(
+        uint256 _amount,
+        uint32 _duration,
+        uint256 _attachedCollateral
+    ) public pure returns (uint256) {
+        uint256 initialLtv = _amount.mulDiv(1, fromETHtoPeso(_attachedCollateral));
+        if (initialLtv > MAX_INITIAL_LTV_BP) revert CollateralBellowLtv(initialLtv);
+        return _calculateAPY(_duration, initialLtv);
     }
 
     /// Managing the Collateral ---------------------------------------------------------
@@ -228,9 +240,6 @@ contract MercadoSantaFe {
         if (_loan.installments < MIN_INSTALLMENTS) revert InvalidLoanInstallments();
 
         require(_loan.intervalDuration() >= MAX_TIME_BETWEEN_INSTALLS); /// check after updating the value.
-
-        if (_loan.apy > MAX_APY_BP) revert InvalidLoanAPY();
-        if (_loan.apy < MIN_APY_BP) revert InvalidLoanAPY();
 
         if (_loan.duration > MAX_DURATION) revert InvalidLoanDuration();
         if (_loan.duration < MIN_DURATION) revert InvalidLoanDuration();
@@ -342,15 +351,21 @@ contract MercadoSantaFe {
         
     // }
 
+    function safe16(uint256 _amount) private pure returns (uint16) {
+        if (_amount > type(uint16).max) revert InvalidUInt16();
+        return uint16(_amount);
+    }
     
 
     function _convertToLoan(LoanForm memory _loanForm, address _owner) internal view returns (Loan memory _loan) {
+        uint256 apy = calculateAPY(_loanForm.amount, _loanForm.duration, _loanForm.attachedCollateral);
+        require(apy <= _loanForm.maxAcceptedApy);
         _loan = Loan({
             owner: _owner,
             amount: _loanForm.amount,
             totalPayment: 0,
             installments: _loanForm.installments,
-            apy: _loanForm.apy,
+            apy: safe16(apy),
             createdAt: block.timestamp,
             duration: _loanForm.duration,
             attachedCollateral: _loanForm.attachedCollateral
@@ -390,6 +405,17 @@ contract MercadoSantaFe {
 
 
     /// PRIVATE PARTY 🎛️ ----------------------------------------------------------------
+
+    /// TODO should we consider the available liquidity?
+    function _calculateAPY(uint32 _duration, uint256 _initialLtv) private pure returns (uint256 _apy) {
+        _apy = uint256(BASE_APY_BP);
+        // if (_initialLtv > SAFE_INITIAL_LTV_BP) {
+        //     _apy += uint256(BASE_APY_BP).mulDiv(_initialLtv, MAX_INITIAL_LTV_BP);
+        // }
+        // if (_duration > 4 weeks) {
+        //     _apy += uint256(BASE_APY_BP).mulDiv(_duration, MAX_DURATION);
+        // }
+    }
 
     /// TODO: use real oracle.
     /// @dev The price in base asset pesos, of the collateral (mpETH).

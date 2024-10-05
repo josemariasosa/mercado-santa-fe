@@ -67,9 +67,9 @@ library LoanLib {
 
 struct LoanForm {
     uint256 amount;
-    uint8 installments;  // cuantos abonos?
-    uint16 apy;         // as basis point 100% == 100_00
-    uint32 duration;    // in seconds
+    uint8 installments;    // cuantos abonos?
+    uint256 maxAcceptedApy; // as basis point 100% == 100_00
+    uint32 duration;       // in seconds
     uint256 attachedCollateral;
 }
 

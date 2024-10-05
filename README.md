@@ -16,6 +16,13 @@ The loans can be used to pay for services such as electricity, water, and gas.
 
 The medium to long-term vision is to automate the loan process to shift the risk to investors who are willing to generate returns, allowing users to obtain microloans without the need for collateralization.
 
+## APY Calculation
+
+One of the most important parameters of the fixed-rate loan is the APY. The value should consider:
+
+- Initial LTV. Less than or around 50% should have low impact. 8% is the max allowed LTV, with the highest APY.
+- Loan duration.
+
 ## Technologies Used
 
 - **Solidity**: Language for developing smart contracts.
