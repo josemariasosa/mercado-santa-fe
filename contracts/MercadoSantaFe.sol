@@ -12,7 +12,6 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 // Uncomment this line to use console.log
 import "hardhat/console.sol";
 
-
 uint256 constant MAX_LOANS_BY_USER = 3;
 
 /// @param loanIds IMPORTANT: 3 is the max loans for user. LoanId == 0 means, no loan at all.
@@ -21,8 +20,6 @@ struct User {
     // uint256 debt; // debt is always changing.
     uint256[MAX_LOANS_BY_USER] loanIds;
 }
-
-
 
 /// CDP collateral debt possition
 
@@ -38,8 +35,6 @@ contract MercadoSantaFe {
 
     /// Constants -----------------------------------------------------------------------
 
-    ///@dev the most common term for a time extension allowed after the due date.
-    uint256 private constant GRACE_PERIOD = 5 days; // 5 natural days
     uint16 private constant BASIS_POINTS = 100_00; // 100.00%
 
     address public immutable collateral;
@@ -77,6 +72,7 @@ contract MercadoSantaFe {
     /// @dev Collateral, and all sort of good User stuff. user => balance
     mapping (address => User) public users;
 
+    /// @dev LoanId => Loan.
     mapping (uint256 => Loan) public loans;
 
     /// @dev refers to the original amount loaned, before interest is added.
@@ -84,7 +80,6 @@ contract MercadoSantaFe {
 
     /// @dev refers to the loan principal plus interest. Do not include penalties.
     uint256 public loanAmountWithInterest;
-
 
     /// Errors & events -----------------------------------------------------------------
 
@@ -96,14 +91,16 @@ contract MercadoSantaFe {
     error InvalidLoanDuration();
     error InvalidCollateral(address _token);
     error LoanIsFullyPaid();
+    error NotEnoughCollateral();
     error InvalidInput();
     error NotEnoughBalance();
     error DoNotLeaveDust(uint256 _change);
     error NotEnoughLiquidity();
     error MaxLoansByUser();
+    error ApyGreaterThanLimit(uint256 _apy);
     error InvalidUInt16();
     error PayOnlyWhatYouOwn(uint256 _remainingDebt);
-    error CollateralBellowLtv(uint256 _initialLtv);
+    error CollateralBellowMaxLtv(uint256 _initialLtv);
 
     constructor(
         IERC20 _collateral,
@@ -150,10 +147,10 @@ contract MercadoSantaFe {
         User memory _user = users[_account];
         for (uint i; i < _user.loanIds.length; i++) {
             uint _id = _user.loanIds[i];
-            console.log("ITS me mario", i);
-            console.log("ITS me mario", _id);
-            console.log(loans[_id].grandDebt());
-            console.log(loans[_id].totalPayment);
+            // console.log("ITS me mario", i);
+            // console.log("ITS me mario", _id);
+            // console.log(loans[_id].grandDebt());
+            // console.log(loans[_id].totalPayment);
             if (_id > 0) _amount += (loans[_id].grandDebt() - loans[_id].totalPayment);
         }
     }
@@ -164,7 +161,7 @@ contract MercadoSantaFe {
         uint256 _attachedCollateral
     ) public pure returns (uint256) {
         uint256 initialLtv = _amount.mulDiv(1, fromETHtoPeso(_attachedCollateral));
-        if (initialLtv > MAX_INITIAL_LTV_BP) revert CollateralBellowLtv(initialLtv);
+        if (initialLtv > MAX_INITIAL_LTV_BP) revert CollateralBellowMaxLtv(initialLtv);
         return _calculateAPY(_duration, initialLtv);
     }
 
@@ -202,33 +199,110 @@ contract MercadoSantaFe {
 
     function borrow(LoanForm memory _form) external {
         User storage user = users[msg.sender];
-        Loan memory newLoan = _convertToLoan(_form, msg.sender); // Revert if _form is invalid.
+
+        /// Lock Collateral
+        if (user.balanceCollat < _form.attachedCollateral) revert NotEnoughCollateral();
+        user.balanceCollat -= _form.attachedCollateral;
+
+        _borrow(user, _form, msg.sender);
+    }
+
+    function depositAndBorrow(LoanForm memory _form) external {
+        User storage user = users[msg.sender];
+
+        /// Get Collateral
+        if (_form.attachedCollateral < minCollateralAmount) revert InvalidInput();
+        doTransferIn(collateral, msg.sender, _form.attachedCollateral);
+
+        _borrow(user, _form, msg.sender);
+    }
+
+    /// Pay what you own 🪙 --------------------------------------------------------------
+
+    function pay(uint256 _amount, uint256 _loanId) external {
+        if (_loanId == 0) revert InvalidInput();
+
+        Loan storage loan = loans[_loanId];
+
+        if (loan.isFullyPaid()) revert LoanIsFullyPaid();
+
+        doTransferIn(bodega.asset(), msg.sender, _amount);
+
+        LoanDebtStatus memory _status = _loanDebtStatus(loan);
+        uint256 remainingDebt = _status.remainingDebt;
+        // if (late) remainingDebt += _getPenalty(loan)
+
+        if (_amount > remainingDebt) revert PayOnlyWhatYouOwn(remainingDebt);
+
+        /// updating Storage
+        loan.totalPayment += _amount;
+    }
+
+    /// Core funtionalities 🌎 -----------------------------------------------------------
+
+    function _borrow(
+        User storage _user,
+        LoanForm memory _form,
+        address _owner
+    ) private {
+        /// LTV
+        uint256 initialLtv = _form.amount.mulDiv(1, fromETHtoPeso(_form.attachedCollateral));
+        if (initialLtv > MAX_INITIAL_LTV_BP) revert CollateralBellowMaxLtv(initialLtv);
+
+        /// APY
+        uint256 apy = _calculateAPY(_form.duration, initialLtv);
+        if (apy > _form.maxAcceptedApy) revert ApyGreaterThanLimit(apy);
+
+        /// Create and validate Loan.
+        Loan memory loan = _convertToLoan(_form, apy, _owner);
+        _validateLoan(loan);
         uint256 loanId = nextLoanId++;
-
-        // TODO: is this the best way to calculate LTV?
-        uint256 collateralTotalValue = fromETHtoPeso(user.balanceCollat);
-        uint256 maxBorrow = collateralTotalValue.mulDiv(85_00, 100_00); // LTV
-
-        require(_form.amount <= maxBorrow);
 
         /// AT THIS POINT THE LOAN SHOULD BE 100% VALIDATED.
 
         /// @dev FIND the first available loan id, or revert.
-        _assignNewLoanTo(user, loanId); // Revert if the max number of loans.
-        loans[loanId] = newLoan;
-        _activeUsers.add(msg.sender);
+        _assignNewLoanTo(_user, loanId); // Revert if max number of loans.
+        loans[loanId] = loan;
+        _activeUsers.add(_owner);
         
         // updating storage
-        loanPrincipal += newLoan.amount;
-        loanAmountWithInterest += newLoan.grandDebt();
-
-        // lock assets
-        _lockCollateral(user, newLoan);
+        loanPrincipal += loan.amount;
+        loanAmountWithInterest += loan.grandDebt();
 
         /// TODO
-        bodega.lend(msg.sender, newLoan.amount);
+        bodega.lend(_owner, loan.amount);
     }
 
+    /// PRIVATE PARTY 🎛️ ----------------------------------------------------------------
+
+    function _convertToLoan(
+        LoanForm memory _loanForm,
+        uint256 _apy,
+        address _owner
+    ) internal view returns (Loan memory _loan) {
+        return Loan({
+            owner: _owner,
+            amount: _loanForm.amount,
+            totalPayment: 0,
+            installments: _loanForm.installments,
+            apy: safe16(_apy),
+            createdAt: block.timestamp,
+            duration: _loanForm.duration,
+            attachedCollateral: _loanForm.attachedCollateral
+        });
+    }
+
+    function _assignNewLoanTo(User storage _user, uint256 _newLoanId) private {
+        for (uint i; i < MAX_LOANS_BY_USER; i++) {
+            if (_user.loanIds[i] == 0) {
+                // replace it to the new loan id
+                _user.loanIds[i] = _newLoanId;
+                return;
+            }
+        }
+        // "No more available loans"
+        revert MaxLoansByUser();
+    }
 
     function _validateLoan(Loan memory _loan) internal view {
         if (_loan.amount > bodega.availableAsset()) revert NotEnoughLiquidity();
@@ -319,93 +393,6 @@ contract MercadoSantaFe {
         }
     }
 
-    function pay(uint256 _amount, uint256 _loanId) external {
-        if (_loanId == 0) revert InvalidInput();
-
-        Loan storage loan = loans[_loanId];
-
-        if (loan.isFullyPaid()) revert LoanIsFullyPaid();
-
-        bool late = block.timestamp - GRACE_PERIOD > loan.createdAt + loan.duration;
-
-        doTransferIn(bodega.asset(), msg.sender, _amount);
-
-        LoanDebtStatus memory _status = _loanDebtStatus(loan);
-        uint256 remainingDebt = _status.remainingDebt;
-        // if (late) remainingDebt += _getPenalty(loan)
-
-        if (_amount > remainingDebt) revert PayOnlyWhatYouOwn(remainingDebt);
-
-        /// updating Storage
-        loan.totalPayment += _amount;
-    }
-
-    // function converInstallment(Loan storage _loan, uint256 _amount) internal {
-
-    //     uint256 totalPayment = _loan.totalPayment + _amount;
-    //     // do not pay more than the credit.
-    //     require(totalPayment <= _loan.amount);
-
-
-    //     _loan.totalPayment += _amount;
-        
-    // }
-
-    function safe16(uint256 _amount) private pure returns (uint16) {
-        if (_amount > type(uint16).max) revert InvalidUInt16();
-        return uint16(_amount);
-    }
-    
-
-    function _convertToLoan(LoanForm memory _loanForm, address _owner) internal view returns (Loan memory _loan) {
-        uint256 apy = calculateAPY(_loanForm.amount, _loanForm.duration, _loanForm.attachedCollateral);
-        require(apy <= _loanForm.maxAcceptedApy);
-        _loan = Loan({
-            owner: _owner,
-            amount: _loanForm.amount,
-            totalPayment: 0,
-            installments: _loanForm.installments,
-            apy: safe16(apy),
-            createdAt: block.timestamp,
-            duration: _loanForm.duration,
-            attachedCollateral: _loanForm.attachedCollateral
-        });
-        _validateLoan(_loan);
-    }
-
-    function _assignNewLoanTo(User storage _user, uint256 _newLoanId) private {
-        for (uint i; i < MAX_LOANS_BY_USER; i++) {
-            if (_user.loanIds[i] == 0) {
-                // replace it to the new loan id
-                _user.loanIds[i] = _newLoanId;
-                return;
-            }
-        }
-        // "No more available loans"
-        revert MaxLoansByUser();
-    }
-
-    function _createNewLoan(uint256 _newLoanId, LoanForm memory _form, address owner) internal{
-
-
-    }
-
-    function _lockCollateral(User storage _user, Loan memory _loan) private {
-        require(_user.balanceCollat >= _loan.attachedCollateral);
-        _user.balanceCollat -= _loan.attachedCollateral;
-    }
-
-
-
-
-
-
-
-
-
-
-    /// PRIVATE PARTY 🎛️ ----------------------------------------------------------------
-
     /// TODO should we consider the available liquidity?
     function _calculateAPY(uint32 _duration, uint256 _initialLtv) private pure returns (uint256 _apy) {
         _apy = uint256(BASE_APY_BP);
@@ -429,6 +416,11 @@ contract MercadoSantaFe {
         for (uint i; i < MAX_LOANS_BY_USER; i++) {
             if (loanIds[i] > 0) _res++;
         }
+    }
+
+    function safe16(uint256 _amount) private pure returns (uint16) {
+        if (_amount > type(uint16).max) revert InvalidUInt16();
+        return uint16(_amount);
     }
 
     function doTransferIn(address _asset, address _from, uint256 _amount) private {

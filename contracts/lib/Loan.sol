@@ -31,6 +31,9 @@ library LoanLib {
     uint16 private constant BASIS_POINTS = 100_00; // 100.00%
     uint256 private constant FIXED_LOAN_FEE = 100 * 10**18; // Can be zero.
 
+    ///@dev the most common term for a time extension allowed after the due date.
+    uint256 private constant GRACE_PERIOD = 5 days; // 5 natural days
+
     /// @dev should revert if the interval is invalid.
     function intervalDuration(Loan memory _self) internal pure returns (uint256 _intervalDuration) {
         _intervalDuration = uint256(_self.duration).mulDiv(1, _self.installments, Math.Rounding.Ceil);
@@ -44,6 +47,10 @@ library LoanLib {
             Math.Rounding.Ceil
         );
         if (withInterest > 0) return _debt = FIXED_LOAN_FEE + withInterest;
+    }
+
+    function isLate(Loan memory _self) internal view returns (bool) {
+        return block.timestamp - GRACE_PERIOD > _self.createdAt + _self.duration;
     }
 
     function isFullyPaid(Loan memory _self) internal pure returns (bool) {
