@@ -16,10 +16,15 @@ struct Loan {
     /// @dev totalPayment should NEVER be greater than grandDebt.
     uint256 totalPayment;
 
-    uint8 installments; // cuantos abonos?
-    uint16 apy;         // as basis point 100% == 100_00
-    uint256 createdAt;  // unix timestamp
-    uint32 duration;    // in seconds
+    /// @dev Number of payments the owner will have to do.
+    uint8 installments;
+
+    /// @dev As basis point 69.70% == 69_70
+    uint16 apy;
+
+    /// @dev Unix timestamp in seconds.
+    uint256 createdAt;
+    uint32 duration;
 
     uint256 attachedCollateral;
 }
@@ -74,17 +79,17 @@ library LoanLib {
 
 struct LoanForm {
     uint256 amount;
-    uint8 installments;    // cuantos abonos?
+    uint8 installments;     // cuantos abonos?
     uint256 maxAcceptedApy; // as basis point 100% == 100_00
-    uint32 duration;       // in seconds
+    uint32 duration;        // in seconds
     uint256 attachedCollateral;
 }
 
-/// @param maturedDebt – implies the debt has reached its due date.
-/// @param nextInstallment – focuses on the fact that this is the next payment to be made.
-/// @param remainingDebt – clearly conveys that this is what’s left after payments.
+/// @param maturedDebt implies the debt has reached its due date.
+/// @param nextInstallment focuses on the fact that this is the next payment to be made.
+/// @param remainingDebt clearly conveys that this is what’s left after payments.
 struct LoanDebtStatus {
-    uint256 maturedDebt; // in pesos
-    uint256 nextInstallment; // in pesos
-    uint256 remainingDebt; // in pesos
+    uint256 maturedDebt;     // all amounts are in pesos
+    uint256 nextInstallment;
+    uint256 remainingDebt;
 }

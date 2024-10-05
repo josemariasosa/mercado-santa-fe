@@ -5,6 +5,7 @@ import {ERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {ERC4626} from "@openzeppelin/contracts/token/ERC20/extensions/ERC4626.sol";
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import {IBodegaDeChocolates} from "./interfaces/IBodegaDeChocolates.sol";
+import {IPriceFeed} from "./interfaces/IPriceFeed.sol";
 import {Loan, LoanDebtStatus, LoanForm, LoanLib} from "./lib/Loan.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -39,8 +40,9 @@ contract MercadoSantaFe {
 
     address public immutable collateral;
     IBodegaDeChocolates public immutable bodega;
+    IPriceFeed public immutable collatToPesosOracle;
 
-    address public immutable creditAsset ; // immutable
+    address public immutable creditAsset;
 
     /// @dev Amount is in pesos.
     uint256 private constant MAX_CREDIT_AMOUNT = 10_000 * 10**18;
@@ -104,10 +106,12 @@ contract MercadoSantaFe {
 
     constructor(
         IERC20 _collateral,
-        IBodegaDeChocolates _bodega
+        IBodegaDeChocolates _bodega,
+        IPriceFeed _collatToPesosOracle
     ) {
         collateral = address(_collateral);
         bodega = _bodega;
+        collatToPesosOracle = _collatToPesosOracle;
 
         nextLoanId = 1; // loan-id 0 means no loan at all.
     }

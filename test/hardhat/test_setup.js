@@ -6,7 +6,7 @@ MLARGE = ethers.parseEther("1000000000000");
 async function deployProtocolFixture() {
   const MercadoSantaFe = await ethers.getContractFactory("MercadoSantaFeHarness");
   const BodegaDeChocolates = await ethers.getContractFactory("BodegaDeChocolates");
-  const MPETHToken = await ethers.getContractFactory("MPETHToken");
+  const USDCToken = await ethers.getContractFactory("USDCToken");
   const XOCToken = await ethers.getContractFactory("XOCToken");
 
   const [
@@ -18,8 +18,8 @@ async function deployProtocolFixture() {
 
   /// Deploying dummy tokens.
 
-  const MPETHTokenContract = await MPETHToken.deploy();
-  await MPETHTokenContract.waitForDeployment();
+  const USDCTokenContract = await USDCToken.deploy();
+  await USDCTokenContract.waitForDeployment();
 
   const XOCTokenContract = await XOCToken.deploy();
   await XOCTokenContract.waitForDeployment();
@@ -29,7 +29,7 @@ async function deployProtocolFixture() {
   const BodegaContract = await BodegaDeChocolates.deploy(XOCTokenContract.target)
 
   const MercadoSantaFeContract = await MercadoSantaFe.deploy(
-    MPETHTokenContract.target,
+    USDCTokenContract.target,
     BodegaContract.target
   );
   await MercadoSantaFeContract.waitForDeployment();
@@ -46,7 +46,7 @@ async function deployProtocolFixture() {
   //     // VERDE Token
   //     VerdeTokenContract.target,
   //     // Collateral Asset
-  //     MPETHTokenContract.target,
+  //     USDCTokenContract.target,
   //     MPETHPriceFeedContract.target,
   //     ethers.parseEther("0.01"),
   //     // Protocol Operations
@@ -74,9 +74,9 @@ async function deployProtocolFixture() {
 
   /// Token allocation.
 
-  await MPETHTokenContract.allocateTo(alice.address, ethers.parseEther("10"));
-  await MPETHTokenContract.allocateTo(bob.address, ethers.parseEther("0.2"));
-  await MPETHTokenContract.allocateTo(carl.address, ethers.parseEther("2"));
+  await USDCTokenContract.allocateTo(alice.address, ethers.parseEther("10"));
+  await USDCTokenContract.allocateTo(bob.address, ethers.parseEther("0.2"));
+  await USDCTokenContract.allocateTo(carl.address, ethers.parseEther("2"));
 
   await XOCTokenContract.allocateTo(alice.address, ethers.parseUnits("31000", 18));
   await XOCTokenContract.allocateTo(bob.address, ethers.parseUnits("11000", 18));
@@ -87,7 +87,7 @@ async function deployProtocolFixture() {
   return {
     MercadoSantaFeContract,
     BodegaContract,
-    MPETHTokenContract,
+    USDCTokenContract,
     XOCTokenContract,
     owner,
     alice,

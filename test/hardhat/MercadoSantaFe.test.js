@@ -13,7 +13,7 @@ describe("Mercado Santa Fe 🏗️ - Borrow and Lending protocol ----", function
   describe("Deploy", function () {
     it("[REFERENCE 🙊] Initialization parameters are correct.", async function () {
       // const {
-      //   MPETHTokenContract,
+      //   USDCTokenContract,
       //   VerdeTokenContract,
       //   BorrowVerdeContract,
       //   MPETHPriceFeedContract,
@@ -29,7 +29,7 @@ describe("Mercado Santa Fe 🏗️ - Borrow and Lending protocol ----", function
 
       // expect(await BorrowVerdeContract.owner()).to.be.equal(owner.address);
       // expect(await BorrowVerdeContract.verdeToken()).to.be.equal(VerdeTokenContract.target);
-      // expect(await BorrowVerdeContract.collatAsset()).to.be.equal(MPETHTokenContract.target);
+      // expect(await BorrowVerdeContract.collatAsset()).to.be.equal(USDCTokenContract.target);
       // expect(await BorrowVerdeContract.collatToUsdOracle()).to.be.equal(MPETHPriceFeedContract.target);
       // expect(await BorrowVerdeContract.treasuryVault()).to.be.equal(TreasuryVaultContract.target);
       // expect(await BorrowVerdeContract.minCollatAmount()).to.be.equal(ethers.parseEther("0.01"));
@@ -42,7 +42,7 @@ describe("Mercado Santa Fe 🏗️ - Borrow and Lending protocol ----", function
     it("Initialization parameters are correct.", async function () {
       const {
         MercadoSantaFeContract,
-        MPETHTokenContract,
+        USDCTokenContract,
         BodegaContract,
         XOCTokenContract,
         owner,
@@ -100,7 +100,7 @@ describe("Mercado Santa Fe 🏗️ - Borrow and Lending protocol ----", function
       const {
         MercadoSantaFeContract,
         BodegaContract,
-        MPETHTokenContract,
+        USDCTokenContract,
         XOCTokenContract,
         owner,
         alice,
@@ -112,7 +112,7 @@ describe("Mercado Santa Fe 🏗️ - Borrow and Lending protocol ----", function
       await XOCTokenContract.connect(alice).approve(BodegaContract.target, MLARGE);
       await BodegaContract.connect(alice).deposit(ethers.parseUnits("31000", 18), alice.address);
 
-      await MPETHTokenContract.connect(alice).approve(MercadoSantaFeContract.target, MLARGE);
+      await USDCTokenContract.connect(alice).approve(MercadoSantaFeContract.target, MLARGE);
       await MercadoSantaFeContract.connect(alice).depositCollateral(alice.address, ethers.parseEther("1"));
 
       /// Create first loan.
@@ -184,7 +184,7 @@ describe("Mercado Santa Fe 🏗️ - Borrow and Lending protocol ----", function
 
       // expect(await BorrowVerdeContract.owner()).to.be.equal(owner.address);
       // expect(await BorrowVerdeContract.verdeToken()).to.be.equal(VerdeTokenContract.target);
-      // expect(await BorrowVerdeContract.collatAsset()).to.be.equal(MPETHTokenContract.target);
+      // expect(await BorrowVerdeContract.collatAsset()).to.be.equal(USDCTokenContract.target);
       // expect(await BorrowVerdeContract.collatToUsdOracle()).to.be.equal(MPETHPriceFeedContract.target);
       // expect(await BorrowVerdeContract.treasuryVault()).to.be.equal(TreasuryVaultContract.target);
       // expect(await BorrowVerdeContract.minCollatAmount()).to.be.equal(ethers.parseEther("0.01"));
@@ -197,7 +197,7 @@ describe("Mercado Santa Fe 🏗️ - Borrow and Lending protocol ----", function
     it("Invalid basis points limits MUST revert.", async function () {
       // const {
       //   MercadoSantaFeContract,
-      //   MPETHTokenContract,
+      //   USDCTokenContract,
       //   XOCTokenContract,
       //   owner,
       //   alice,

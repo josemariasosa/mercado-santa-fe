@@ -23,7 +23,7 @@ contract BodegaDeChocolates is ERC4626 {
 
     constructor(
         address _asset
-    ) ERC4626(IERC20(_asset)) ERC20("Mercado: mpETH <> XOC alphaV1", "MSF0001") {}
+    ) ERC4626(IERC20(_asset)) ERC20("Mercado: USDC <> XOC alphaV1", "MSF0001") {}
 
     function totalAssets() public view override returns (uint256) {
         return availableAsset + totalInCDP;
