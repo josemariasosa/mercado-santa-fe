@@ -12,6 +12,8 @@ struct Loan {
     address owner;
     /// @dev amount and totalPayment are denominated in pesos.
     uint256 amount;
+
+    /// @dev totalPayment should NEVER be greater than grandDebt.
     uint256 totalPayment;
 
     uint8 installments; // cuantos abonos?
@@ -27,6 +29,7 @@ library LoanLib {
     using Math for uint256;
 
     uint16 private constant BASIS_POINTS = 100_00; // 100.00%
+    uint256 private constant FIXED_LOAN_FEE = 100 * 10**18; // Can be zero.
 
     /// @dev should revert if the interval is invalid.
     function intervalDuration(Loan memory _self) internal pure returns (uint256 _intervalDuration) {
@@ -34,8 +37,13 @@ library LoanLib {
     }
 
     /// Loan Total Grand Debt.
-    function grandDebt(Loan memory _self) internal pure returns (uint256) {
-        return _self.amount.mulDiv(BASIS_POINTS + _self.apy, BASIS_POINTS, Math.Rounding.Ceil);
+    function grandDebt(Loan memory _self) internal pure returns (uint256 _debt) {
+        uint256 withInterest = _self.amount.mulDiv(
+            BASIS_POINTS + _self.apy,
+            BASIS_POINTS,
+            Math.Rounding.Ceil
+        );
+        if (withInterest > 0) return _debt = FIXED_LOAN_FEE + withInterest;
     }
 
     function isFullyPaid(Loan memory _self) internal pure returns (bool) {

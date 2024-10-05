@@ -52,7 +52,6 @@ contract MercadoSantaFe {
     /// @dev Amount is in pesos.
     uint256 private constant MAX_CREDIT_AMOUNT = 10_000 * 10**18;
     uint256 private constant MIN_CREDIT_AMOUNT =  1_000 * 10**18;
-    uint256 private constant FIXED_LOAN_FEE = 100 * 10**18; // Can be zero.
 
     /// @dev How many installments?
     uint8 private constant MAX_INSTALLMENTS = 52;
@@ -82,6 +81,9 @@ contract MercadoSantaFe {
 
     /// @dev refers to the original amount loaned, before interest is added.
     uint256 public loanPrincipal;
+
+    /// @dev refers to the loan principal plus interest. Do not include penalties.
+    uint256 public loanAmountWithInterest;
 
 
     /// Errors & events -----------------------------------------------------------------
@@ -124,9 +126,16 @@ contract MercadoSantaFe {
         return loans[_loanId].getInstallment();
     }
 
-    function getLoanDebtStatus(uint256 _loanId) external view returns (LoanDebtStatus memory) {
+    function getLoanDebtStatus(
+        uint256 _loanId
+    ) external view returns (LoanDebtStatus memory) {
         if (_loanId == 0) revert InvalidInput();
         return _loanDebtStatus(loans[_loanId]);
+    }
+
+    function getLoan(uint256 _loanId) external view returns (Loan memory) {
+        if (_loanId == 0) revert InvalidInput();
+        return loans[_loanId];
     }
 
     /// @dev max active loans per user is given by `MAX_LOANS_BY_USER`.
@@ -138,7 +147,12 @@ contract MercadoSantaFe {
     function getUserDebt(address _account) external view returns (uint256 _amount) {
         User memory _user = users[_account];
         for (uint i; i < _user.loanIds.length; i++) {
-            if (i > 0) _amount += loans[i].amount;
+            uint _id = _user.loanIds[i];
+            console.log("ITS me mario", i);
+            console.log("ITS me mario", _id);
+            console.log(loans[_id].grandDebt());
+            console.log(loans[_id].totalPayment);
+            if (_id > 0) _amount += (loans[_id].grandDebt() - loans[_id].totalPayment);
         }
     }
 
@@ -194,6 +208,7 @@ contract MercadoSantaFe {
         
         // updating storage
         loanPrincipal += newLoan.amount;
+        loanAmountWithInterest += newLoan.grandDebt();
 
         // lock assets
         _lockCollateral(user, newLoan);
@@ -249,7 +264,7 @@ contract MercadoSantaFe {
         uint256 today = block.timestamp;
         uint256 intervalDuration = _loan.intervalDuration();
 
-        // Loan Grand Debt.
+        // Loan Grand Debt. Includes fee.
         uint256 grandDebt = _loan.grandDebt();
 
         // Last payment must be for the total debt.
@@ -266,31 +281,31 @@ contract MercadoSantaFe {
         console.log("payment: ", payment);
         console.log("whereAmI: ", whereAmI);
 
-        uint256 totalDebt;
-        uint256 remainingDebt;
+        uint256 remainingDebt = grandDebt - _loan.totalPayment;
 
         if (whereAmI == 0) {
             return LoanDebtStatus(
                 0,
-                payment + FIXED_LOAN_FEE,
-                _loan.amount - _loan.totalPayment
+                payment,
+                grandDebt - _loan.totalPayment
             );
-        } else if (whereAmI == _loan.installments) { // TODO: do I have to (- 1)? we are the last
+        } else if (whereAmI < _loan.installments) { // TODO: do I have to (- 1)? we are the last
             // uint256 maturedDebt = FIXED_LOAN_FEE + (_loan.installments - 1) * paymen
-            totalDebt = FIXED_LOAN_FEE + grandDebt;
-            remainingDebt = totalDebt - _loan.totalPayment;
+            /// I AM THE LAST --
             return LoanDebtStatus({
-                maturedDebt: _loan.totalPayment == totalDebt ? 0 : remainingDebt,
-                nextInstallment: _loan.totalPayment >= totalDebt ? 0 : totalDebt,
+                maturedDebt: _loan.totalPayment >= grandDebt ? 0 : remainingDebt,
+                nextInstallment: _loan.totalPayment >= grandDebt ? 0 : remainingDebt,
                 remainingDebt: remainingDebt
             });
         } else {
-            totalDebt = payment * whereAmI;
-            remainingDebt = totalDebt - _loan.totalPayment;
+            uint256 totalDebtNow = payment * whereAmI;
+            uint256 totalDebtNext = payment * (whereAmI + 1);
+            uint256 remainingDebtNow = totalDebtNow - _loan.totalPayment;
+            uint256 remainingDebtNext = totalDebtNext - _loan.totalPayment;
             return LoanDebtStatus({
-                maturedDebt: _loan.totalPayment >= totalDebt ? 0 : remainingDebt,
-                nextInstallment: _loan.totalPayment >= totalDebt ? 0 : totalDebt,
-                remainingDebt: _loan.totalPayment >= totalDebt ? 0 : totalDebt
+                maturedDebt: _loan.totalPayment >= totalDebtNow ? 0 : remainingDebtNow,
+                nextInstallment: _loan.totalPayment >= totalDebtNext ? 0 : remainingDebtNext,
+                remainingDebt: _loan.totalPayment >= grandDebt ? 0 : remainingDebt
             });
         }
     }

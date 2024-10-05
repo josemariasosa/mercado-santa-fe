@@ -131,14 +131,16 @@ describe("Mercado Santa Fe 🏗️ - Borrow and Lending protocol ----", function
         ]
       );
 
-      expect(await MercadoSantaFeContract.loanPrincipal()).to.be.equal(ethers.parseUnits("1234", 18));
+      expect(
+        await MercadoSantaFeContract.loanPrincipal()
+      ).to.be.equal(ethers.parseUnits("1234", 18));
 
 
 
       let _status;
       for (let i = 0; i < 3; i++) {
-        if (i == 0) {
-          // we shoud be in installment 0.
+        if (i == 0) { // we shoud be in installment 0.
+          console.log("TIMESTAMP NOW: ", i, await MercadoSantaFeContract.test__getNow());
           expect(await MercadoSantaFeContract.getInstallment(1)).to.be.equal(0);
           _status = await MercadoSantaFeContract.getLoanDebtStatus(1);
           let maturedDebt =  _status.maturedDebt; // in pesos
@@ -146,14 +148,32 @@ describe("Mercado Santa Fe 🏗️ - Borrow and Lending protocol ----", function
           let remainingDebt = _status[2];
 
           expect(maturedDebt).to.be.equal(0);
+          console.log(await MercadoSantaFeContract.getLoan(1));
+          expect(
+            await MercadoSantaFeContract.getUserDebt(alice.address)
+          ).to.be.within((3n * nextInstallment) - 1n, (3n * nextInstallment) + 1n);
           // expect(nextInstallment).to.be.equal() = _status.nextInstallment; // in pesos
+          expect(
+            await MercadoSantaFeContract.getUserDebt(alice.address)
+          ).to.be.equal(remainingDebt);
 
           console.log("osito cup")
           console.log(maturedDebt)
           console.log(nextInstallment)
           console.log(remainingDebt)
           // expect(await MercadoSantaFeContract.test__loanDebt(loan)).to.be.equal(0);
+        } else if (i == 1) { // we shoud be in installment 1.
+          console.log("TIMESTAMP NOW: ", i, await MercadoSantaFeContract.test__getNow());
+          expect(await MercadoSantaFeContract.getInstallment(1)).to.be.equal(1);
+
+
+        } else if (i == 2) {
+
+          expect(await MercadoSantaFeContract.getInstallment(1)).to.be.equal(2);
         }
+
+        console.log(await MercadoSantaFeContract.getIntervalDuration(1));
+        await time.increase(await MercadoSantaFeContract.getIntervalDuration(1));
       }
 
 
