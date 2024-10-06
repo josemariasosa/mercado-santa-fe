@@ -1,7 +1,7 @@
 # Mercado México 🍉
 
 <div style="text-align: center;">
-  <img src="media/cover.jpeg" alt="Impacta360 Logo" width="250"/>
+  <img src="media/cover.jpg" alt="Mercado México Cover" width="250"/>
 </div>
 
 Lending and borrowing protocol for Fixed-Rate Loans in Mexican Pesos.
