@@ -42,8 +42,6 @@ contract MercadoSantaFe {
     IBodegaDeChocolates public immutable bodega;
     IPriceFeed public immutable collatToPesosOracle;
 
-    address public immutable creditAsset;
-
     /// @dev Amount is in pesos.
     uint256 private constant MAX_CREDIT_AMOUNT = 10_000 * 10**18;
     uint256 private constant MIN_CREDIT_AMOUNT =  1_000 * 10**18;
@@ -99,10 +97,16 @@ contract MercadoSantaFe {
     error DoNotLeaveDust(uint256 _change);
     error NotEnoughLiquidity();
     error MaxLoansByUser();
+    error NotAcceptingNewLoans();
     error ApyGreaterThanLimit(uint256 _apy);
     error InvalidUInt16();
     error PayOnlyWhatYouOwn(uint256 _remainingDebt);
     error CollateralBellowMaxLtv(uint256 _initialLtv);
+
+    modifier loansOpen {
+        if (!bodega.acceptingNewLoans()) revert NotAcceptingNewLoans();
+        _;
+    }
 
     constructor(
         IERC20 _collateral,
@@ -201,7 +205,7 @@ contract MercadoSantaFe {
 
     /// Borrowing Pesos 🪙 ---------------------------------------------------------------
 
-    function borrow(LoanForm memory _form) external {
+    function borrow(LoanForm memory _form) external loansOpen {
         User storage user = users[msg.sender];
 
         /// Lock Collateral
@@ -211,7 +215,7 @@ contract MercadoSantaFe {
         _borrow(user, _form, msg.sender);
     }
 
-    function depositAndBorrow(LoanForm memory _form) external {
+    function depositAndBorrow(LoanForm memory _form) external loansOpen {
         User storage user = users[msg.sender];
 
         /// Get Collateral

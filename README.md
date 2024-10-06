@@ -1,4 +1,8 @@
-# Mercado Santa Fe 🌮
+# Mercado México 🍉
+
+<div style="text-align: center;">
+  <img src="media/cover.jpeg" alt="Impacta360 Logo" width="250"/>
+</div>
 
 Lending and borrowing protocol for Fixed-Rate Loans in Mexican Pesos.
 
@@ -15,6 +19,17 @@ If the user does not meet the payment deadlines or does not cover the total amou
 The loans can be used to pay for services such as electricity, water, and gas.
 
 The medium to long-term vision is to automate the loan process to shift the risk to investors who are willing to generate returns, allowing users to obtain microloans without the need for collateralization.
+
+## Key Considerations
+
+- Each loan has it's own individual risk profile.
+- Liquidations are great mechanisms to reduce/eliminate the risk of a loan going underwater. But, if we want to allow the entrance of new users to the space, we have to simplify the process and **eliminate** the need for liquidations.
+
+## Future problems to solve
+
+- Using a ERC4626 vault to distribute the collected interest is not very efficient and can be vulnerable to MEV and other kind of liquidity draining.
+- Distribute collected interest in a way that actually considers the investor.
+- Allow investors to stablish an individual risk profile, and lend their funds only to those kind of loans.
 
 ## APY Calculation
 

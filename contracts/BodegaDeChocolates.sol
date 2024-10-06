@@ -1,29 +1,33 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.27;
 
-import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {ERC4626} from "@openzeppelin/contracts/token/ERC20/extensions/ERC4626.sol";
-import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
+import {IMercadoSantaFe} from "./interfaces/IMercadoSantaFe.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 // Uncomment this line to use console.log
 import "hardhat/console.sol";
 
-/// @title Bodega de Chocolates - Collateralize asset A and get asset B credits.
-/// Asset B credits are being storage in this contract.
+/// @title Bodega de Chocolates - Vault that manages the available Pesos liquidity.
 /// @author Centauri devs team ✨
-contract BodegaDeChocolates is ERC4626 {
+contract BodegaDeChocolates is ERC4626, Ownable {
 
     using SafeERC20 for IERC20;
+
+    IMercadoSantaFe public immutable mercado;
+    bool public acceptingNewLoans;
 
     uint256 public availableAsset; // ready to be borrowed.
     uint256 public totalInCDP;     // lock in a loan, in pesos
 
-    constructor(
-        address _asset
-    ) ERC4626(IERC20(_asset)) ERC20("Mercado: USDC <> XOC alphaV1", "MSF0001") {}
+    constructor(IERC20 _asset, address _owner)
+        Ownable(_owner)
+        ERC4626(_asset)
+        ERC20("Mercado: USDC <> XOC alphaV1", "MSF0001") {}
 
     function totalAssets() public view override returns (uint256) {
         return availableAsset + totalInCDP;
