@@ -163,3 +163,7 @@ REPORT_GAS=true npx hardhat test
 npx hardhat node
 npx hardhat ignition deploy ./ignition/modules/Lock.js
 ```
+
+## Important links
+
+- Base Oracle USD-MXN: https://basescan.org/address/0x9C2ec31ECeCcD6394Fd0b810d439378805688b3D
