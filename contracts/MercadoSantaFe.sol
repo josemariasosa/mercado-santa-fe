@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.27;
 
-import {ERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {ERC4626} from "@openzeppelin/contracts/token/ERC20/extensions/ERC4626.sol";
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import {IBodegaDeChocolates} from "./interfaces/IBodegaDeChocolates.sol";
@@ -9,6 +9,7 @@ import {IPriceFeed} from "./interfaces/IPriceFeed.sol";
 import {Loan, LoanDebtStatus, LoanForm, LoanLib} from "./lib/Loan.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {IERC20} from "./interfaces/IERC20.sol";
 
 // Uncomment this line to use console.log
 import "hardhat/console.sol";
@@ -36,11 +37,14 @@ contract MercadoSantaFe {
 
     /// Constants -----------------------------------------------------------------------
 
-    uint16 private constant BASIS_POINTS = 100_00; // 100.00%
+    /// @dev Constant value for exchange rates conversion.
+    uint256 private immutable _collat2PesosConversionConstant;
 
     address public immutable collateral;
     IBodegaDeChocolates public immutable bodega;
     IPriceFeed public immutable collatToPesosOracle;
+
+    uint16 private constant BASIS_POINTS = 100_00; // 100.00%
 
     /// @dev Amount is in pesos.
     uint256 private constant MAX_CREDIT_AMOUNT = 10_000 * 10**18;
@@ -58,7 +62,9 @@ contract MercadoSantaFe {
 
     uint32 private constant MAX_DURATION = 365 days;
     uint32 private constant MIN_DURATION = 1 weeks;
+
     uint32 private constant MAX_TIME_BETWEEN_INSTALLS = (4 * 1 weeks); // aprox 1 month.
+    uint32 private constant MIN_TIME_BETWEEN_INSTALLS = 1 days;
 
     /// Storage -------------------------------------------------------------------------
 
@@ -88,6 +94,7 @@ contract MercadoSantaFe {
     error InvalidLoanAmount();
     error InvalidLoanInstallments();
     error InvalidLoanAPY();
+    error LessThanMinCollatAmount();
     error InvalidLoanDuration();
     error InvalidCollateral(address _token);
     error LoanIsFullyPaid();
@@ -98,8 +105,11 @@ contract MercadoSantaFe {
     error NotEnoughLiquidity();
     error MaxLoansByUser();
     error NotAcceptingNewLoans();
-    error ApyGreaterThanLimit(uint256 _apy);
+    error NegativeNumber();
+    error ApyGreaterThanAccepted(uint256 _apy);
     error InvalidUInt16();
+    error InvalidBasisPoint();
+    error InvalidIntervalDuration();
     error PayOnlyWhatYouOwn(uint256 _remainingDebt);
     error CollateralBellowMaxLtv(uint256 _initialLtv);
 
@@ -118,6 +128,11 @@ contract MercadoSantaFe {
         collatToPesosOracle = _collatToPesosOracle;
 
         nextLoanId = 1; // loan-id 0 means no loan at all.
+
+        // Keep this constant factor at hand for Exchange Rate conversion.
+        _collat2PesosConversionConstant = 10 ** (
+            _collatToPesosOracle.decimals() + 18 - IERC20(_bodega.asset()).decimals()
+        );
     }
 
     /// Public View functions -----------------------------------------------------------
@@ -168,16 +183,36 @@ contract MercadoSantaFe {
         uint32 _duration,
         uint256 _attachedCollateral
     ) public pure returns (uint256) {
-        uint256 initialLtv = _amount.mulDiv(1, fromETHtoPeso(_attachedCollateral));
+        uint256 initialLtv = _amount.mulDiv(1, fromCollatToPesos(_attachedCollateral));
         if (initialLtv > MAX_INITIAL_LTV_BP) revert CollateralBellowMaxLtv(initialLtv);
         return _calculateAPY(_duration, initialLtv);
+    }
+
+    /// @param _amount in collateral.
+    /// @return The loan in pesos using `_ltvBp`.
+    function estimateLoanAmount(
+        uint256 _amount,
+        uint16 _ltvBp
+    ) public view returns (uint256) {
+        if (_ltvBp > BASIS_POINTS) revert InvalidBasisPoint();
+        return fromCollatToPesos(_amount).mulDiv(_ltvBp, BASIS_POINTS, Math.Rounding.Floor);
+    }
+
+    /// @param _amount in Pesos.
+    /// @return The collateral amount required to get a loan of `_amount` in Pesos.
+    function estimateLoanCollat(
+        uint256 _amount,
+        uint16 _ltvBp
+    ) public view returns (uint256) {
+        if (_ltvBp > BASIS_POINTS) revert InvalidBasisPoint();
+        return fromCollatToPesos(_amount.mulDiv(BASIS_POINTS, _ltvBp, Math.Rounding.Floor));
     }
 
     /// Managing the Collateral ---------------------------------------------------------
 
     function depositCollateral(address _to, uint256 _amount) external {
         if (_to == address(0)) revert InvalidInput();
-        if (_amount < minCollateralAmount) revert InvalidInput();
+        if (_amount < minCollateralAmount) revert LessThanMinCollatAmount();
 
         doTransferIn(collateral, msg.sender, _amount);
         users[_to].balanceCollat += _amount;
@@ -219,7 +254,7 @@ contract MercadoSantaFe {
         User storage user = users[msg.sender];
 
         /// Get Collateral
-        if (_form.attachedCollateral < minCollateralAmount) revert InvalidInput();
+        if (_form.attachedCollateral < minCollateralAmount) revert LessThanMinCollatAmount();
         doTransferIn(collateral, msg.sender, _form.attachedCollateral);
 
         _borrow(user, _form, msg.sender);
@@ -244,6 +279,9 @@ contract MercadoSantaFe {
 
         /// updating Storage
         loan.totalPayment += _amount;
+
+        /// sending payment to Bodega
+        // IERC20(bodega.asset()).safeIncreaseAllowance();
     }
 
     /// Core funtionalities 🌎 -----------------------------------------------------------
@@ -254,12 +292,12 @@ contract MercadoSantaFe {
         address _owner
     ) private {
         /// LTV
-        uint256 initialLtv = _form.amount.mulDiv(1, fromETHtoPeso(_form.attachedCollateral));
+        uint256 initialLtv = _form.amount.mulDiv(1, fromCollatToPesos(_form.attachedCollateral));
         if (initialLtv > MAX_INITIAL_LTV_BP) revert CollateralBellowMaxLtv(initialLtv);
 
         /// APY
         uint256 apy = _calculateAPY(_form.duration, initialLtv);
-        if (apy > _form.maxAcceptedApy) revert ApyGreaterThanLimit(apy);
+        if (apy > _form.maxAcceptedApy) revert ApyGreaterThanAccepted(apy);
 
         /// Create and validate Loan.
         Loan memory loan = _convertToLoan(_form, apy, _owner);
@@ -315,16 +353,17 @@ contract MercadoSantaFe {
     function _validateLoan(Loan memory _loan) internal view {
         if (_loan.amount > bodega.availableAsset()) revert NotEnoughLiquidity();
 
-        if (_loan.amount > MAX_CREDIT_AMOUNT) revert InvalidLoanAmount();
-        if (_loan.amount < MIN_CREDIT_AMOUNT) revert InvalidLoanAmount();
+        if (_loan.amount > MAX_CREDIT_AMOUNT
+                || _loan.amount < MIN_CREDIT_AMOUNT) revert InvalidLoanAmount();
 
-        if (_loan.installments > MAX_INSTALLMENTS) revert InvalidLoanInstallments();
-        if (_loan.installments < MIN_INSTALLMENTS) revert InvalidLoanInstallments();
+        if (_loan.installments > MAX_INSTALLMENTS
+                || _loan.installments < MIN_INSTALLMENTS) revert InvalidLoanInstallments();
 
-        require(_loan.intervalDuration() >= MAX_TIME_BETWEEN_INSTALLS); /// check after updating the value.
+        if (_loan.intervalDuration() > MAX_TIME_BETWEEN_INSTALLS
+                || _loan.intervalDuration() < MIN_TIME_BETWEEN_INSTALLS) revert InvalidIntervalDuration();
 
-        if (_loan.duration > MAX_DURATION) revert InvalidLoanDuration();
-        if (_loan.duration < MIN_DURATION) revert InvalidLoanDuration();
+        if (_loan.duration > MAX_DURATION 
+                || _loan.duration < MIN_DURATION) revert InvalidLoanDuration();
 
         /// TODO: CHECK A RELATION BETWEEN APY AND DURATION + TOTAL_LIQUIDITY.
     }
@@ -412,10 +451,29 @@ contract MercadoSantaFe {
         // }
     }
 
-    /// TODO: use real oracle.
-    /// @dev The price in base asset pesos, of the collateral (mpETH).
-    function fromETHtoPeso(uint256 _amount) internal pure returns (uint256 _price) {
-        _price = _amount.mulDiv(10000, 1);
+    /// @dev The price in base asset pesos, of the collateral.
+    /// @return The value in Pesos of the _amount in collateral.
+    function fromCollatToPesos(uint256 _amount) internal pure returns (uint256) {
+        return _amount.mulDiv(
+            collatPriceUsd(),
+            _collat2PesosConversionConstant,
+            Math.Rounding.Floor
+        );
+    }
+
+    /// @return The collateral needed to borrow `_amount` in Pesos.
+    function fromPesosToCollat(uint256 _amount) internal pure returns (uint256) {
+        return _amount.mulDiv(
+            _collat2PesosConversionConstant,
+            collatPriceUsd(),
+            Math.Rounding.Floor
+        );
+    }
+
+    /// @return Following Chainlink standard, `price` has 8 decimals.
+    function collatPriceUsd() internal view returns (uint256) {
+        (, int256 price,,,) = collatToPesosOracle.latestRoundData();
+        return unsigned256(price);
     }
 
     function _getUserActiveLoans(User memory _user) internal pure returns (uint8 _res) {
@@ -429,6 +487,12 @@ contract MercadoSantaFe {
     function safe16(uint256 _amount) private pure returns (uint16) {
         if (_amount > type(uint16).max) revert InvalidUInt16();
         return uint16(_amount);
+    }
+
+    /// @dev Safe conversion from signed integer to unsigned.
+    function unsigned256(int256 _amount) private pure returns (uint256) {
+        if (_amount < 0) revert NegativeNumber();
+        return uint256(_amount);
     }
 
     function doTransferIn(address _asset, address _from, uint256 _amount) private {

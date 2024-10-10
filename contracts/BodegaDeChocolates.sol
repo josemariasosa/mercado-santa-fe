@@ -27,7 +27,9 @@ contract BodegaDeChocolates is ERC4626, Ownable {
     constructor(IERC20 _asset, address _owner)
         Ownable(_owner)
         ERC4626(_asset)
-        ERC20("Mercado: USDC <> XOC alphaV1", "MSF0001") {}
+        ERC20("Mercado: USDC <> XOC alphaV1", "MSF0001") {
+        acceptingNewLoans = true;
+    }
 
     function totalAssets() public view override returns (uint256) {
         return availableAsset + totalInCDP;
@@ -83,6 +85,10 @@ contract BodegaDeChocolates is ERC4626, Ownable {
         availableAsset -= _amount;
 
         doTransferOut(asset(), _to, _amount); // send pesos
+    }
+
+    function receivePayment(address _from, uint256 _amount) external /* onlyValidMercado */ {
+        
     }
 
     // withdraw is never that simple !

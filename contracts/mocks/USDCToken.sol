@@ -10,4 +10,8 @@ contract USDCToken is ERC20 {
     function allocateTo(address _receiver, uint256 _amount) public {
         _mint(_receiver, _amount);
     }
+
+    function decimals() public override pure returns (uint8) {
+        return 6;
+    }
 }

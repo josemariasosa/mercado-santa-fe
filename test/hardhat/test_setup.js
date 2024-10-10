@@ -8,6 +8,7 @@ async function deployProtocolFixture() {
   const BodegaDeChocolates = await ethers.getContractFactory("BodegaDeChocolates");
   const USDCToken = await ethers.getContractFactory("USDCToken");
   const XOCToken = await ethers.getContractFactory("XOCToken");
+  const USDToMXNOracle = await ethers.getContractFactory("USDToMXNOracle");
 
   const [
     owner,
@@ -24,65 +25,28 @@ async function deployProtocolFixture() {
   const XOCTokenContract = await XOCToken.deploy();
   await XOCTokenContract.waitForDeployment();
 
+  const USDToMXNOracleContract = await USDToMXNOracle.deploy();
+  await USDToMXNOracleContract.waitForDeployment();
+
   /// Deploying markets.
 
-  const BodegaContract = await BodegaDeChocolates.deploy(XOCTokenContract.target)
+  const BodegaContract = await BodegaDeChocolates.deploy(XOCTokenContract.target, owner.address);
+  await BodegaContract.waitForDeployment();
 
   const MercadoSantaFeContract = await MercadoSantaFe.deploy(
     USDCTokenContract.target,
-    BodegaContract.target
+    BodegaContract.target,
+    USDToMXNOracleContract.target
   );
   await MercadoSantaFeContract.waitForDeployment();
 
-
-
-
-
-
-  // /// Upgradeable borrow contract
-  // const BorrowVerdeContract = await upgrades.deployProxy(
-  //   BorrowVerde,
-  //   [
-  //     // VERDE Token
-  //     VerdeTokenContract.target,
-  //     // Collateral Asset
-  //     USDCTokenContract.target,
-  //     MPETHPriceFeedContract.target,
-  //     ethers.parseEther("0.01"),
-  //     // Protocol Operations
-  //     owner.address,
-  //     TreasuryVaultContract.target,
-  //     // Initial Parameters
-  //     [
-  //       ethers.parseUnits("600000", 6), // Debt Cap
-  //       5000, // Safe LTV
-  //       7000, // Liquidation LTV
-  //       500,  // Penalty
-  //       800,  // Borrow rate per year
-  //       10    // Borrow initial fee
-  //     ]
-  //   ],
-  //   {
-  //     initializer: "initializeHarness",
-  //     unsafeAllow: ["constructor"]
-  //   }
-  // );
-  // await BorrowVerdeContract.waitForDeployment();
-
-  // const SwapToMpEthOnLineaV1Implementation = await upgrades.erc1967.getImplementationAddress(ProxyContract.target);
-  // const adminAddress = await upgrades.erc1967.getAdminAddress(ProxyContract.target);
-
   /// Token allocation.
 
-  await USDCTokenContract.allocateTo(alice.address, ethers.parseEther("10"));
-  await USDCTokenContract.allocateTo(bob.address, ethers.parseEther("0.2"));
-  await USDCTokenContract.allocateTo(carl.address, ethers.parseEther("2"));
+  await USDCTokenContract.allocateTo(alice.address, ethers.parseUnits("1000", 6));
+  await USDCTokenContract.allocateTo(bob.address, ethers.parseUnits("200", 6));
+  await USDCTokenContract.allocateTo(carl.address, ethers.parseUnits("30", 6));
 
-  await XOCTokenContract.allocateTo(alice.address, ethers.parseUnits("31000", 18));
-  await XOCTokenContract.allocateTo(bob.address, ethers.parseUnits("11000", 18));
-  await XOCTokenContract.allocateTo(carl.address, ethers.parseUnits("11000", 18));
-
-
+  await XOCTokenContract.allocateTo(bob.address, ethers.parseUnits("110000", 18));
 
   return {
     MercadoSantaFeContract,

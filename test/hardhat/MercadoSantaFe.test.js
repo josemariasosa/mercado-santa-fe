@@ -95,6 +95,90 @@ describe("Mercado Santa Fe 🏗️ - Borrow and Lending protocol ----", function
     });
   });
 
+  describe("Validate loan creation", function () {
+    // LessThanMinCollatAmount
+    // CollateralBellowMaxLtv
+    // ApyGreaterThanLimit
+    // ApyGreaterThanAccepted
+    // NotEnoughLiquidity
+    // InvalidLoanAmount
+    // InvalidLoanInstallments
+    // InvalidIntervalDuration
+    // InvalidLoanDuration
+    it("NotEnoughCollateral.", async function () {
+      const {
+        MercadoSantaFeContract,
+        BodegaContract,
+        USDCTokenContract,
+        XOCTokenContract,
+        owner,
+        alice,
+        bob,
+        carl,
+      } = await loadFixture(deployProtocolFixture);
+
+      /// Deposit liquidity.
+      await XOCTokenContract.connect(bob).approve(BodegaContract.target, MLARGE);
+      await BodegaContract.connect(bob).deposit(await XOCTokenContract.balanceOf(bob.address), bob.address);
+
+      await USDCTokenContract.connect(alice).approve(MercadoSantaFeContract.target, MLARGE);
+      await MercadoSantaFeContract.connect(alice).depositCollateral(alice.address, ethers.parseUnits("100", 6));
+
+      /// Create first loan.
+      await MercadoSantaFeContract.connect(alice).borrow(
+        [
+          // uint256 amount;
+          ethers.parseUnits("1234", 18),
+          // uint8 installments;
+          3,
+          // uint16 apy;
+          800,
+          // uint32 duration;
+          3 * 4 * 7 * 24 * 60 * 60, // approx 3 months
+          // uint256 attachedCollateral;
+          ethers.parseUnits("0.5", 18)
+        ]
+      );
+    });
+
+    // it("[REFERENCE 🙊] Initialization parameters are correct.", async function () {
+    //   const {
+    //     MercadoSantaFeContract,
+    //     BodegaContract,
+    //     USDCTokenContract,
+    //     XOCTokenContract,
+    //     owner,
+    //     alice,
+    //     bob,
+    //     carl,
+    //   } = await loadFixture(deployProtocolFixture);
+
+    //   /// Deposit liquidity.
+    //   await XOCTokenContract.connect(alice).approve(BodegaContract.target, MLARGE);
+    //   await BodegaContract.connect(alice).deposit(ethers.parseUnits("31000", 18), alice.address);
+
+    //   await USDCTokenContract.connect(alice).approve(MercadoSantaFeContract.target, MLARGE);
+    //   await MercadoSantaFeContract.connect(alice).depositCollateral(alice.address, ethers.parseEther("1"));
+
+    //   /// Create first loan.
+    //   await MercadoSantaFeContract.connect(alice).borrow(
+    //     [
+    //       // uint256 amount;
+    //       ethers.parseUnits("1234", 18),
+    //       // uint8 installments;
+    //       3,
+    //       // uint16 apy;
+    //       800,
+    //       // uint32 duration;
+    //       3 * 4 * 7 * 24 * 60 * 60, // approx 3 months
+    //       // uint256 attachedCollateral;
+    //       ethers.parseUnits("0.5", 18)
+    //     ]
+    //   );
+    // });
+
+  });
+
   describe("Getting my first loan", function () {
     it("Loan parameters must be correct.", async function () {
       const {
