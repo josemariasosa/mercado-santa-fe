@@ -12,9 +12,16 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 // Uncomment this line to use console.log
 import "hardhat/console.sol";
 
+struct WithdrawOrder {
+    address account;
+    uint256 amount;
+}
+
 /// @title Bodega de Chocolates - Vault that manages the available Pesos liquidity.
 /// @author Centauri devs team ✨
-contract BodegaDeChocolates is ERC4626, Ownable {
+contract BodegaDeChocolates is ERC4626, Ownable { /// <-------- REMOVE OWNABLE
+
+    uint256 private constant MAX_FLUSH_SIZE = 100;
 
     using SafeERC20 for IERC20;
 
@@ -24,11 +31,24 @@ contract BodegaDeChocolates is ERC4626, Ownable {
     uint256 public availableAsset; // ready to be borrowed.
     uint256 public totalInCDP;     // lock in a loan, in pesos
 
+    uint256 public pendingForWOS;
+    uint256 public totalInWOS;     // total waiting in a withdraw order
+
+    /// @dev FIFO implementation
+    uint256 public headQueueWOS;
+    uint256 public tailQueueWOS;
+    mapping(uint256 => WithdrawOrder) public wos;
+
+    mapping(address => uint256) public availableBalance;
+
     constructor(IERC20 _asset, address _owner)
         Ownable(_owner)
         ERC4626(_asset)
         ERC20("Mercado: USDC <> XOC alphaV1", "MSF0001") {
         acceptingNewLoans = true;
+
+        headQueueWOS = 1;
+        tailQueueWOS = 1;
     }
 
     function totalAssets() public view override returns (uint256) {
@@ -92,29 +112,86 @@ contract BodegaDeChocolates is ERC4626, Ownable {
     }
 
     // withdraw is never that simple !
-    // /// @dev Withdraw/redeem common workflow.
-    // function _withdraw(
-    //     address caller,
-    //     address receiver,
-    //     address owner,
-    //     uint256 assets,
-    //     uint256 shares
-    // ) internal override {
-    //     if (caller != owner) {
-    //         _spendAllowance(owner, caller, shares);
-    //     }
+    /// @dev Withdraw/redeem common workflow.
+    function _withdraw(
+        address caller,
+        address receiver,
+        address owner,
+        uint256 assets,
+        uint256 shares
+    ) internal override {
+        if (caller != owner) {
+            _spendAllowance(owner, caller, shares);
+        }
 
-    //     // If _asset is ERC-777, `transfer` can trigger a reentrancy AFTER the transfer happens through the
-    //     // `tokensReceived` hook. On the other hand, the `tokensToSend` hook, that is triggered before the transfer,
-    //     // calls the vault, which is assumed not malicious.
-    //     //
-    //     // Conclusion: we need to do the transfer after the burn so that any reentrancy would happen after the
-    //     // shares are burned and after the assets are transferred, which is a valid state.
-    //     _burn(owner, shares);
-    //     SafeERC20.safeTransfer(_asset, receiver, assets);
+        // If _asset is ERC-777, `transfer` can trigger a reentrancy AFTER the transfer happens through the
+        // `tokensReceived` hook. On the other hand, the `tokensToSend` hook, that is triggered before the transfer,
+        // calls the vault, which is assumed not malicious.
+        //
+        // Conclusion: we need to do the transfer after the burn so that any reentrancy would happen after the
+        // shares are burned and after the assets are transferred, which is a valid state.
+        _burn(owner, shares);
 
-    //     emit Withdraw(caller, receiver, owner, assets, shares);
-    // }
+        // if (assets <= totalInCDP) {
+        //     _createWithdrawOrder(receiver, assets);
+        // } else {
+        //     availableBalance[receiver] += (assets - totalInCDP);
+        //     _createWithdrawOrder(receiver, totalInCDP);
+        // }
+
+        _enqueueOrder(receiver, assets);
+
+        _flush();
+
+
+        // SafeERC20.safeTransfer(_asset, receiver, assets);
+
+        // emit Withdraw(caller, receiver, owner, assets, shares);
+    }
+
+    function _min(uint256 a, uint256 b) private pure returns (uint256) {
+        if (a < b) { return a; } else { return b; }
+    }
+
+    function _flush() private {
+
+        if (totalInWOS > totalInCDP) {
+            uint256 delta = totalInWOS - totalInCDP;
+            pendingForWOS += delta;
+            availableAsset -= delta;
+        }
+
+        uint256 ordersToProcess = _min(waitingOrders(), MAX_FLUSH_SIZE);
+
+        for (uint i; i < ordersToProcess; i++) {
+            WithdrawOrder memory next = wos[headQueueWOS];
+
+            if (pendingForWOS > 0) {
+                if (next.amount <= pendingForWOS) {
+                    availableBalance[next.account] += next.amount;
+                    pendingForWOS -= next.amount;
+                    totalInWOS -= next.amount;
+                    headQueueWOS++;
+                    continue;
+                } else {
+                    availableBalance[next.account] += pendingForWOS;
+                    wos[headQueueWOS].amount -= pendingForWOS;
+                    pendingForWOS = 0;
+                    totalInWOS -= next.amount;
+                }
+            } else {
+                // no more available to pay orders.
+                return;
+            }
+        }
+    }
+
+    function _createWithdrawOrder(address _receiver, uint256 _assets) private {
+        totalInCDP -= _assets;
+        totalInWOS += _assets;
+        uint256 _id = tailQueueWOS++;
+        wos[_id] = WithdrawOrder(_receiver, _assets);
+    }
 
     //     /** @dev See {IERC4626-withdraw}. */
     // function withdraw(uint256 assets, address receiver, address owner) public override returns (uint256) {
@@ -148,6 +225,41 @@ contract BodegaDeChocolates is ERC4626, Ownable {
 
     function doTransferOut(address _asset, address _to, uint256 _amount) private {
         IERC20(_asset).safeTransfer(_to, _amount);
+    }
+
+
+    /// DEQUE
+    function _enqueueOrder(address _receiver, uint256 _assets) private {
+        totalInWOS += _assets;
+        uint256 last = tailQueueWOS++;
+        wos[last] = WithdrawOrder(_receiver, _assets);
+    }
+
+    function _partialDequeueOrder() private returns (WithdrawOrder memory _order) {
+        require(tailQueueWOS > headQueueWOS);
+        _order = wos[headQueueWOS];
+        headQueueWOS++;
+    }
+
+    function _totalDequeueOrder() private {
+        require(tailQueueWOS > headQueueWOS);
+        WithdrawOrder memory _order = wos[headQueueWOS];
+        headQueueWOS++;
+        availableBalance[_order.account] += _order.amount;
+    }
+
+    // function _dequeueOrder() private returns (WithdrawOrder memory _order) {
+    //     require(tailQueueWOS > headQueueWOS);
+    //     _order = wos[headQueueWOS];
+    //     headQueueWOS++;
+    // }
+
+    function _getNextOrderAmount() private view returns (uint256) {
+        return wos[headQueueWOS].amount;
+    }
+
+    function waitingOrders() public view returns (uint256) {
+        return tailQueueWOS - headQueueWOS;
     }
 
 }
