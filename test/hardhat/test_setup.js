@@ -53,6 +53,7 @@ async function deployProtocolFixture() {
     BodegaContract,
     USDCTokenContract,
     XOCTokenContract,
+    USDToMXNOracleContract,
     owner,
     alice,
     bob,

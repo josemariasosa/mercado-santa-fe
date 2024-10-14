@@ -1,15 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.27;
 
-import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import {ERC4626} from "@openzeppelin/contracts/token/ERC20/extensions/ERC4626.sol";
+import {ERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {ERC4626, IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/ERC4626.sol";
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import {IBodegaDeChocolates} from "./interfaces/IBodegaDeChocolates.sol";
 import {IPriceFeed} from "./interfaces/IPriceFeed.sol";
 import {Loan, LoanDebtStatus, LoanForm, LoanLib} from "./lib/Loan.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {IERC20} from "./interfaces/IERC20.sol";
 
 // Uncomment this line to use console.log
 import "hardhat/console.sol";
@@ -39,6 +38,9 @@ contract MercadoSantaFe {
 
     /// @dev Constant value for exchange rates conversion.
     uint256 private immutable _collat2PesosConversionConstant;
+
+    /// @dev If collat and pesos decimals are equal, then `_decimalOffset` equals 0.
+    uint8 private immutable _decimalsOffset;
 
     address public immutable collateral;
     IBodegaDeChocolates public immutable bodega;
@@ -129,9 +131,16 @@ contract MercadoSantaFe {
 
         nextLoanId = 1; // loan-id 0 means no loan at all.
 
+        uint8 _collatDecimals = IERC20Metadata(address(_collateral)).decimals();
+        uint8 _pesosDecimals = IERC20Metadata(_bodega.asset()).decimals();
+        if (_pesosDecimals > _collatDecimals) {
+            _decimalsOffset = _pesosDecimals - _collatDecimals;
+        }
         // Keep this constant factor at hand for Exchange Rate conversion.
         _collat2PesosConversionConstant = 10 ** (
-            _collatToPesosOracle.decimals() + 18 - IERC20(_bodega.asset()).decimals()
+            _collatToPesosOracle.decimals()
+            + 18
+            - _pesosDecimals
         );
     }
 
@@ -178,11 +187,15 @@ contract MercadoSantaFe {
         }
     }
 
+    function getUserCollat(address _amount) external view returns (uint256) {
+        return users[_amount].balanceCollat;
+    }
+
     function calculateAPY(
         uint256 _amount,
         uint32 _duration,
         uint256 _attachedCollateral
-    ) public pure returns (uint256) {
+    ) public view returns (uint256) {
         uint256 initialLtv = _amount.mulDiv(1, fromCollatToPesos(_attachedCollateral));
         if (initialLtv > MAX_INITIAL_LTV_BP) revert CollateralBellowMaxLtv(initialLtv);
         return _calculateAPY(_duration, initialLtv);
@@ -193,7 +206,7 @@ contract MercadoSantaFe {
     function estimateLoanAmount(
         uint256 _amount,
         uint16 _ltvBp
-    ) public view returns (uint256) {
+    ) external view returns (uint256) {
         if (_ltvBp > BASIS_POINTS) revert InvalidBasisPoint();
         return fromCollatToPesos(_amount).mulDiv(_ltvBp, BASIS_POINTS, Math.Rounding.Floor);
     }
@@ -203,7 +216,7 @@ contract MercadoSantaFe {
     function estimateLoanCollat(
         uint256 _amount,
         uint16 _ltvBp
-    ) public view returns (uint256) {
+    ) external view returns (uint256) {
         if (_ltvBp > BASIS_POINTS) revert InvalidBasisPoint();
         return fromCollatToPesos(_amount.mulDiv(BASIS_POINTS, _ltvBp, Math.Rounding.Floor));
     }
@@ -452,26 +465,28 @@ contract MercadoSantaFe {
     }
 
     /// @dev The price in base asset pesos, of the collateral.
+    /// @param _amount in collateral.
     /// @return The value in Pesos of the _amount in collateral.
-    function fromCollatToPesos(uint256 _amount) internal pure returns (uint256) {
-        return _amount.mulDiv(
-            collatPriceUsd(),
+    function fromCollatToPesos(uint256 _amount) internal view returns (uint256) {
+        return (_amount * 10**_decimalsOffset).mulDiv(
+            collatPricePesos(),
             _collat2PesosConversionConstant,
             Math.Rounding.Floor
         );
     }
 
-    /// @return The collateral needed to borrow `_amount` in Pesos.
-    function fromPesosToCollat(uint256 _amount) internal pure returns (uint256) {
+    /// @param _amount in pesos.
+    /// @return The equivalent on collateral for the `_amount` in Pesos.
+    function fromPesosToCollat(uint256 _amount) internal view returns (uint256) {
         return _amount.mulDiv(
             _collat2PesosConversionConstant,
-            collatPriceUsd(),
+            collatPricePesos() * 10**_decimalsOffset,
             Math.Rounding.Floor
         );
     }
 
     /// @return Following Chainlink standard, `price` has 8 decimals.
-    function collatPriceUsd() internal view returns (uint256) {
+    function collatPricePesos() internal view returns (uint256) {
         (, int256 price,,,) = collatToPesosOracle.latestRoundData();
         return unsigned256(price);
     }

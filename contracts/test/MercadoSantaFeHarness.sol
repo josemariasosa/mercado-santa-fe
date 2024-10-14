@@ -29,4 +29,12 @@ contract MercadoSantaFeHarness is MercadoSantaFe {
     function test__validateLoan(Loan memory _loan) external view {
         return  _validateLoan(_loan);
     }
+
+    function test__fromCollatToPesos(uint256 _amount) external view returns (uint256) {
+        return fromCollatToPesos(_amount);
+    }
+
+    function test__fromPesosToCollat(uint256 _amount) external view returns (uint256) {
+        return fromPesosToCollat(_amount);
+    }
 }
