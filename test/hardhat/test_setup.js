@@ -36,7 +36,8 @@ async function deployProtocolFixture() {
   const MercadoSantaFeContract = await MercadoSantaFe.deploy(
     USDCTokenContract.target,
     BodegaContract.target,
-    USDToMXNOracleContract.target
+    USDToMXNOracleContract.target,
+    ethers.parseUnits("20", 6) // 20 usd
   );
   await MercadoSantaFeContract.waitForDeployment();
 

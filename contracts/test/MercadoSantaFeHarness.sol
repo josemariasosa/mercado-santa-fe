@@ -11,11 +11,13 @@ contract MercadoSantaFeHarness is MercadoSantaFe {
     constructor(
         IERC20 _collateral,
         IBodegaDeChocolates _bodega,
-        IPriceFeed _collatToPesosOracle
+        IPriceFeed _collatToPesosOracle,
+        uint256 _minCollateralAmount
     ) MercadoSantaFe(
         _collateral,
         _bodega,
-        _collatToPesosOracle
+        _collatToPesosOracle,
+        _minCollateralAmount
     ) {}
 
     function test__loanDebtStatus(Loan memory _loan) external view returns (LoanDebtStatus memory _status) {

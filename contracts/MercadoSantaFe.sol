@@ -100,7 +100,7 @@ contract MercadoSantaFe {
     error InvalidLoanDuration();
     error InvalidCollateral(address _token);
     error LoanIsFullyPaid();
-    error NotEnoughCollateral();
+    error NotEnoughCollatToBorrow();
     error InvalidInput();
     error NotEnoughBalance();
     error DoNotLeaveDust(uint256 _change);
@@ -123,11 +123,13 @@ contract MercadoSantaFe {
     constructor(
         IERC20 _collateral,
         IBodegaDeChocolates _bodega,
-        IPriceFeed _collatToPesosOracle
+        IPriceFeed _collatToPesosOracle,
+        uint256 _minCollateralAmount
     ) {
         collateral = address(_collateral);
         bodega = _bodega;
         collatToPesosOracle = _collatToPesosOracle;
+        minCollateralAmount = _minCollateralAmount;
 
         nextLoanId = 1; // loan-id 0 means no loan at all.
 
@@ -221,6 +223,10 @@ contract MercadoSantaFe {
         return fromCollatToPesos(_amount.mulDiv(BASIS_POINTS, _ltvBp, Math.Rounding.Floor));
     }
 
+    function getFixedLoanFee() external pure returns (uint256) {
+        return LoanLib.getFixedLoanFee();
+    }
+
     /// Managing the Collateral ---------------------------------------------------------
 
     function depositCollateral(address _to, uint256 _amount) external {
@@ -257,7 +263,7 @@ contract MercadoSantaFe {
         User storage user = users[msg.sender];
 
         /// Lock Collateral
-        if (user.balanceCollat < _form.attachedCollateral) revert NotEnoughCollateral();
+        if (user.balanceCollat < _form.attachedCollateral) revert NotEnoughCollatToBorrow();
         user.balanceCollat -= _form.attachedCollateral;
 
         _borrow(user, _form, msg.sender);
