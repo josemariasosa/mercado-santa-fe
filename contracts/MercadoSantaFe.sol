@@ -93,27 +93,28 @@ contract MercadoSantaFe {
 
     event Withdrawal(uint amount, uint when);
 
-    error InvalidLoanAmount();
-    error InvalidLoanInstallments();
-    error InvalidLoanAPY();
-    error LessThanMinCollatAmount();
-    error InvalidLoanDuration();
-    error InvalidCollateral(address _token);
-    error LoanIsFullyPaid();
-    error NotEnoughCollatToBorrow();
-    error InvalidInput();
-    error NotEnoughBalance();
-    error DoNotLeaveDust(uint256 _change);
-    error NotEnoughLiquidity();
-    error MaxLoansByUser();
-    error NotAcceptingNewLoans();
-    error NegativeNumber();
     error ApyGreaterThanAccepted(uint256 _apy);
-    error InvalidUInt16();
+    error CollatLessThanAmount();
+    error CollateralBellowMaxLtv();
+    error DoNotLeaveDust(uint256 _change);
     error InvalidBasisPoint();
+    error InvalidCollateral(address _token);
+    error InvalidInput();
     error InvalidIntervalDuration();
+    error InvalidLoanAPY();
+    error InvalidLoanAmount();
+    error InvalidLoanDuration();
+    error InvalidLoanInstallments();
+    error InvalidUInt16();
+    error LessThanMinCollatAmount();
+    error LoanIsFullyPaid();
+    error MaxLoansByUser();
+    error NegativeNumber();
+    error NotAcceptingNewLoans();
+    error NotEnoughBalance();
+    error NotEnoughCollatToBorrow();
+    error NotEnoughLiquidity();
     error PayOnlyWhatYouOwn(uint256 _remainingDebt);
-    error CollateralBellowMaxLtv(uint256 _initialLtv);
 
     modifier loansOpen {
         if (!bodega.acceptingNewLoans()) revert NotAcceptingNewLoans();
@@ -198,9 +199,16 @@ contract MercadoSantaFe {
         uint32 _duration,
         uint256 _attachedCollateral
     ) public view returns (uint256) {
-        uint256 initialLtv = _amount.mulDiv(1, fromCollatToPesos(_attachedCollateral));
-        if (initialLtv > MAX_INITIAL_LTV_BP) revert CollateralBellowMaxLtv(initialLtv);
-        return _calculateAPY(_duration, initialLtv);
+        if (_amount == 0 || _duration == 0 || _attachedCollateral == 0) {
+            revert InvalidInput();
+        }
+
+        uint256 collatInPesos = fromCollatToPesos(_attachedCollateral);
+        if (_amount > collatInPesos) revert CollatLessThanAmount();
+
+        uint256 ltv = _amount.mulDiv(BASIS_POINTS, collatInPesos, Math.Rounding.Ceil);
+        if (ltv > MAX_INITIAL_LTV_BP) revert CollateralBellowMaxLtv();
+        return _calculateAPY(_duration, ltv);
     }
 
     /// @param _amount in collateral.
@@ -311,11 +319,12 @@ contract MercadoSantaFe {
         address _owner
     ) private {
         /// LTV
-        uint256 initialLtv = _form.amount.mulDiv(1, fromCollatToPesos(_form.attachedCollateral));
-        if (initialLtv > MAX_INITIAL_LTV_BP) revert CollateralBellowMaxLtv(initialLtv);
+        uint256 collatInPesos = fromCollatToPesos(_form.attachedCollateral);
+        uint256 ltv = _form.amount.mulDiv(BASIS_POINTS, collatInPesos, Math.Rounding.Ceil);
+        if (ltv > MAX_INITIAL_LTV_BP) revert CollateralBellowMaxLtv();
 
         /// APY
-        uint256 apy = _calculateAPY(_form.duration, initialLtv);
+        uint256 apy = _calculateAPY(_form.duration, ltv);
         if (apy > _form.maxAcceptedApy) revert ApyGreaterThanAccepted(apy);
 
         /// Create and validate Loan.

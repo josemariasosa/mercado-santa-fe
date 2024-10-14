@@ -362,14 +362,26 @@ describe("Mercado Santa Fe 🏗️ - Borrow and Lending protocol ----", function
   });
 
   describe("Validate loan creation", function () {
-    // CollateralBellowMaxLtv
-    // ApyGreaterThanLimit
-    // ApyGreaterThanAccepted
-    // NotEnoughLiquidity
-    // InvalidLoanAmount
-    // InvalidLoanInstallments
-    // InvalidIntervalDuration
-    // InvalidLoanDuration
+
+    // error (uint256 _apy);
+    // error CollatLessThanAmount();
+    // error DoNotLeaveDust(uint256 _change);
+    // error InvalidBasisPoint();
+    // error InvalidCollateral(address _token);
+    // error InvalidInput();
+    // error InvalidIntervalDuration();
+    // error InvalidLoanAPY();
+    // error InvalidLoanAmount();
+    // error InvalidLoanDuration();
+    // error InvalidLoanInstallments();
+    // error InvalidUInt16();
+    // error LoanIsFullyPaid();
+    // error MaxLoansByUser();
+    // error NegativeNumber();
+    // error NotAcceptingNewLoans();
+    // error NotEnoughBalance();
+    // error NotEnoughLiquidity();
+    // error PayOnlyWhatYouOwn(uint256 _remainingDebt);
     it("NotEnoughCollatToBorrow.", async function () {
       const {
         MercadoSantaFeContract,
@@ -456,41 +468,98 @@ describe("Mercado Santa Fe 🏗️ - Borrow and Lending protocol ----", function
       ).to.be.revertedWithCustomError(MercadoSantaFeContract, "LessThanMinCollatAmount");
     });
 
-    // it("[REFERENCE 🙊] Initialization parameters are correct.", async function () {
-    //   const {
-    //     MercadoSantaFeContract,
-    //     BodegaContract,
-    //     USDCTokenContract,
-    //     XOCTokenContract,
-    //     owner,
-    //     alice,
-    //     bob,
-    //     carl,
-    //   } = await loadFixture(deployProtocolFixture);
+    it("CollateralBellowMaxLtv.", async function () {
+      const {
+        MercadoSantaFeContract,
+        BodegaContract,
+        USDCTokenContract,
+        XOCTokenContract,
+        alice,
+        bob,
+      } = await loadFixture(deployProtocolFixture);
 
-    //   /// Deposit liquidity.
-    //   await XOCTokenContract.connect(alice).approve(BodegaContract.target, MLARGE);
-    //   await BodegaContract.connect(alice).deposit(ethers.parseUnits("31000", 18), alice.address);
+      const initialCollat = ethers.parseUnits("100", 6);
 
-    //   await USDCTokenContract.connect(alice).approve(MercadoSantaFeContract.target, MLARGE);
-    //   await MercadoSantaFeContract.connect(alice).depositCollateral(alice.address, ethers.parseEther("1"));
+      /// Deposit liquidity.
+      await XOCTokenContract.connect(bob).approve(BodegaContract.target, MLARGE);
+      await BodegaContract.connect(bob).deposit(await XOCTokenContract.balanceOf(bob.address), bob.address);
 
-    //   /// Create first loan.
-    //   await MercadoSantaFeContract.connect(alice).borrow(
-    //     [
-    //       // uint256 amount;
-    //       ethers.parseUnits("1234", 18),
-    //       // uint8 installments;
-    //       3,
-    //       // uint16 apy;
-    //       800,
-    //       // uint32 duration;
-    //       3 * 4 * 7 * 24 * 60 * 60, // approx 3 months
-    //       // uint256 attachedCollateral;
-    //       ethers.parseUnits("0.5", 18)
-    //     ]
-    //   );
-    // });
+      await USDCTokenContract.connect(alice).approve(MercadoSantaFeContract.target, MLARGE);
+      await MercadoSantaFeContract.connect(alice).depositCollateral(alice.address, initialCollat);
+      expect(await MercadoSantaFeContract.getUserCollat(alice.address)).to.be.equal(initialCollat);
+
+      // console.log(ethers.formatEther(borrowAmount));
+      expect(MercadoSantaFeContract.calculateAPY(
+        await MercadoSantaFeContract.estimateLoanAmount(initialCollat, 10000),
+        DURATION_3_MONTHS, initialCollat
+      )).to.be.revertedWithCustomError(MercadoSantaFeContract, "CollateralBellowMaxLtv");
+
+      const borrowAmount = await MercadoSantaFeContract.estimateLoanAmount(initialCollat, 6000);
+      const apy = await MercadoSantaFeContract.calculateAPY(
+        borrowAmount, DURATION_3_MONTHS, initialCollat
+      );
+
+      /// Create first loan.
+      await expect(
+        MercadoSantaFeContract.connect(alice).borrow(
+          [
+            // uint256 amount;
+            await MercadoSantaFeContract.estimateLoanAmount(initialCollat, 10000),
+            // uint8 installments;
+            3,
+            // uint16 apy;
+            apy,
+            // uint32 duration;
+            DURATION_3_MONTHS,
+            // uint256 attachedCollateral;
+            initialCollat
+          ]
+        )
+      ).to.be.revertedWithCustomError(MercadoSantaFeContract, "CollateralBellowMaxLtv");
+    });
+
+    it("ApyGreaterThanAccepted.", async function () {
+      const {
+        MercadoSantaFeContract,
+        BodegaContract,
+        USDCTokenContract,
+        XOCTokenContract,
+        alice,
+        bob,
+      } = await loadFixture(deployProtocolFixture);
+
+      const initialCollat = ethers.parseUnits("100", 6);
+
+      /// Deposit liquidity.
+      await XOCTokenContract.connect(bob).approve(BodegaContract.target, MLARGE);
+      await BodegaContract.connect(bob).deposit(await XOCTokenContract.balanceOf(bob.address), bob.address);
+
+      await USDCTokenContract.connect(alice).approve(MercadoSantaFeContract.target, MLARGE);
+      await MercadoSantaFeContract.connect(alice).depositCollateral(alice.address, initialCollat);
+
+      const borrowAmount = await MercadoSantaFeContract.estimateLoanAmount(initialCollat, 6000);
+      const apy = await MercadoSantaFeContract.calculateAPY(
+        borrowAmount, DURATION_3_MONTHS, initialCollat
+      );
+
+      /// Create first loan.
+      await expect(
+        MercadoSantaFeContract.connect(alice).borrow(
+          [
+            // uint256 amount;
+            borrowAmount,
+            // uint8 installments;
+            3,
+            // uint16 apy;
+            apy - 1n,
+            // uint32 duration;
+            DURATION_3_MONTHS,
+            // uint256 attachedCollateral;
+            initialCollat
+          ]
+        )
+      ).to.be.revertedWithCustomError(MercadoSantaFeContract, "ApyGreaterThanAccepted");
+    });
 
   });
 
