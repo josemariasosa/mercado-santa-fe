@@ -7,6 +7,11 @@ const {
 } = require("./test_setup");
 
 const DURATION_3_MONTHS = 3 * 4 * 7 * 24 * 60 * 60;
+const DURATION_1_MONTHS = 1 * 4 * 7 * 24 * 60 * 60;
+const DURATION_1_DAY = 1 * 24 * 60 * 60;
+const DURATION_3_DAY = 3 * 24 * 60 * 60;
+const DURATION_1_YEAR = 365 * 24 * 60 * 60;
+const DURATION_1_WEEK = 7 * 24 * 60 * 60;
 
 function calcGrandTotal(initialAmount, apy, fee) {
   const debt = (initialAmount * (10000n+apy) / 10000n);
@@ -363,16 +368,6 @@ describe("Mercado Santa Fe 🏗️ - Borrow and Lending protocol ----", function
 
   describe("Validate loan creation", function () {
 
-    // error (uint256 _apy);
-    // error CollatLessThanAmount();
-    // error DoNotLeaveDust(uint256 _change);
-    // error InvalidBasisPoint();
-    // error InvalidCollateral(address _token);
-    // error InvalidInput();
-    // error InvalidIntervalDuration();
-    // error InvalidLoanAPY();
-    // error InvalidLoanAmount();
-    // error InvalidLoanDuration();
     // error InvalidLoanInstallments();
     // error InvalidUInt16();
     // error LoanIsFullyPaid();
@@ -561,6 +556,299 @@ describe("Mercado Santa Fe 🏗️ - Borrow and Lending protocol ----", function
       ).to.be.revertedWithCustomError(MercadoSantaFeContract, "ApyGreaterThanAccepted");
     });
 
+    it("CollatLessThanAmount.", async function () {
+      const {
+        MercadoSantaFeContract,
+        BodegaContract,
+        USDCTokenContract,
+        XOCTokenContract,
+        alice,
+        bob,
+      } = await loadFixture(deployProtocolFixture);
+
+      const initialCollat = ethers.parseUnits("20", 6);
+
+      /// Deposit liquidity.
+      await XOCTokenContract.connect(bob).approve(BodegaContract.target, MLARGE);
+      await BodegaContract.connect(bob).deposit(await XOCTokenContract.balanceOf(bob.address), bob.address);
+
+      await USDCTokenContract.connect(alice).approve(MercadoSantaFeContract.target, MLARGE);
+      await MercadoSantaFeContract.connect(alice).depositCollateral(alice.address, initialCollat);
+
+      expect(MercadoSantaFeContract.calculateAPY(
+        await MercadoSantaFeContract.estimateLoanAmount(initialCollat, 10000),
+        DURATION_3_MONTHS, initialCollat
+      )).to.be.revertedWithCustomError(MercadoSantaFeContract, "CollatLessThanAmount");
+    });
+
+    it("DoNotLeaveDust.", async function () {
+      const {
+        MercadoSantaFeContract,
+        BodegaContract,
+        USDCTokenContract,
+        XOCTokenContract,
+        alice,
+        bob,
+      } = await loadFixture(deployProtocolFixture);
+
+      const initialCollat = ethers.parseUnits("100", 6);
+
+      /// Deposit liquidity.
+      await XOCTokenContract.connect(bob).approve(BodegaContract.target, MLARGE);
+      await BodegaContract.connect(bob).deposit(await XOCTokenContract.balanceOf(bob.address), bob.address);
+
+      await USDCTokenContract.connect(alice).approve(MercadoSantaFeContract.target, MLARGE);
+      await MercadoSantaFeContract.connect(alice).depositCollateral(alice.address, initialCollat);
+
+      await expect(MercadoSantaFeContract.connect(alice).withdrawCollateral(
+        initialCollat - (await MercadoSantaFeContract.minCollateralAmount()) + 1n
+      )).to.be.revertedWithCustomError(MercadoSantaFeContract, "DoNotLeaveDust");
+    });
+
+    it("InvalidBasisPoint.", async function () {
+      const {
+        MercadoSantaFeContract,
+      } = await loadFixture(deployProtocolFixture);
+
+      const initialCollat = ethers.parseUnits("100", 6);
+      await expect(
+        MercadoSantaFeContract.estimateLoanAmount(initialCollat, 10001)
+      ).to.be.revertedWithCustomError(MercadoSantaFeContract, "InvalidBasisPoint");
+
+      const amount = ethers.parseUnits("100", 18);
+      await expect(
+        MercadoSantaFeContract.estimateLoanCollat(amount, 10001)
+      ).to.be.revertedWithCustomError(MercadoSantaFeContract, "InvalidBasisPoint");
+    });
+
+    it("InvalidInput.", async function () {
+      const {
+        MercadoSantaFeContract,
+      } = await loadFixture(deployProtocolFixture);
+
+      await expect(
+        MercadoSantaFeContract.getIntervalDuration(0)
+      ).to.be.revertedWithCustomError(MercadoSantaFeContract, "InvalidInput");
+
+      await expect(
+        MercadoSantaFeContract.getInstallment(0)
+      ).to.be.revertedWithCustomError(MercadoSantaFeContract, "InvalidInput");
+
+      await expect(
+        MercadoSantaFeContract.getLoanDebtStatus(0)
+      ).to.be.revertedWithCustomError(MercadoSantaFeContract, "InvalidInput");
+
+      await expect(
+        MercadoSantaFeContract.getLoan(0)
+      ).to.be.revertedWithCustomError(MercadoSantaFeContract, "InvalidInput");
+
+      await expect(
+        MercadoSantaFeContract.calculateAPY(0, 1, 2)
+      ).to.be.revertedWithCustomError(MercadoSantaFeContract, "InvalidInput");
+
+      await expect(
+        MercadoSantaFeContract.calculateAPY(1, 0, 2)
+      ).to.be.revertedWithCustomError(MercadoSantaFeContract, "InvalidInput");
+
+      await expect(
+        MercadoSantaFeContract.calculateAPY(1, 2, 0)
+      ).to.be.revertedWithCustomError(MercadoSantaFeContract, "InvalidInput");
+
+      await expect(
+        MercadoSantaFeContract.depositCollateral(ethers.ZeroAddress, 1)
+      ).to.be.revertedWithCustomError(MercadoSantaFeContract, "InvalidInput");
+
+      await expect(
+        MercadoSantaFeContract.withdrawCollateral(0)
+      ).to.be.revertedWithCustomError(MercadoSantaFeContract, "InvalidInput");
+
+      await expect(
+        MercadoSantaFeContract.pay(1, 0)
+      ).to.be.revertedWithCustomError(MercadoSantaFeContract, "InvalidInput");
+    });
+
+    it("InvalidIntervalDuration.", async function () {
+      const {
+        MercadoSantaFeContract,
+        BodegaContract,
+        USDCTokenContract,
+        XOCTokenContract,
+        alice,
+        bob,
+      } = await loadFixture(deployProtocolFixture);
+
+      const initialCollat = ethers.parseUnits("100", 6);
+
+      /// Deposit liquidity.
+      await XOCTokenContract.connect(bob).approve(BodegaContract.target, MLARGE);
+      await BodegaContract.connect(bob).deposit(await XOCTokenContract.balanceOf(bob.address), bob.address);
+
+      await USDCTokenContract.connect(alice).approve(MercadoSantaFeContract.target, MLARGE);
+      await MercadoSantaFeContract.connect(alice).depositCollateral(alice.address, initialCollat);
+
+      const borrowAmount = await MercadoSantaFeContract.estimateLoanAmount(initialCollat, 6000);
+      const apy = await MercadoSantaFeContract.calculateAPY(
+        borrowAmount, DURATION_3_MONTHS, initialCollat
+      );
+
+      /// Create first loan.
+      await expect(
+        MercadoSantaFeContract.connect(alice).borrow(
+          [
+            // uint256 amount;
+            borrowAmount,
+            // uint8 installments;
+            3,
+            // uint16 apy;
+            apy,
+            // uint32 duration;
+            DURATION_3_DAY - 3,
+            // uint256 attachedCollateral;
+            initialCollat
+          ]
+        )
+      ).to.be.revertedWithCustomError(MercadoSantaFeContract, "InvalidIntervalDuration");
+
+      /// Create first loan.
+      await expect(
+        MercadoSantaFeContract.connect(alice).borrow(
+          [
+            // uint256 amount;
+            borrowAmount,
+            // uint8 installments;
+            3,
+            // uint16 apy;
+            apy,
+            // uint32 duration;
+            DURATION_3_MONTHS + 3,
+            // uint256 attachedCollateral;
+            initialCollat
+          ]
+        )
+      ).to.be.revertedWithCustomError(MercadoSantaFeContract, "InvalidIntervalDuration");
+    });
+
+    it("InvalidLoanAmount.", async function () {
+      const {
+        MercadoSantaFeContract,
+        BodegaContract,
+        USDCTokenContract,
+        XOCTokenContract,
+        alice,
+        bob,
+      } = await loadFixture(deployProtocolFixture);
+
+      const initialCollat = ethers.parseUnits("1000", 6);
+
+      /// Deposit liquidity.
+      await XOCTokenContract.connect(bob).approve(BodegaContract.target, MLARGE);
+      await BodegaContract.connect(bob).deposit(await XOCTokenContract.balanceOf(bob.address), bob.address);
+
+      await USDCTokenContract.connect(alice).approve(MercadoSantaFeContract.target, MLARGE);
+      await MercadoSantaFeContract.connect(alice).depositCollateral(alice.address, initialCollat);
+
+      const borrowAmount = await MercadoSantaFeContract.estimateLoanAmount(initialCollat, 6000);
+      const apy = await MercadoSantaFeContract.calculateAPY(
+        borrowAmount, DURATION_3_MONTHS, initialCollat
+      );
+
+      /// Create first loan.
+      await expect(
+        MercadoSantaFeContract.connect(alice).borrow(
+          [
+            // uint256 amount;
+            ethers.parseUnits("10000", 18) + 1n,
+            // uint8 installments;
+            3,
+            // uint16 apy;
+            apy,
+            // uint32 duration;
+            DURATION_3_MONTHS,
+            // uint256 attachedCollateral;
+            initialCollat
+          ]
+        )
+      ).to.be.revertedWithCustomError(MercadoSantaFeContract, "InvalidLoanAmount");
+
+      /// Create first loan.
+      await expect(
+        MercadoSantaFeContract.connect(alice).borrow(
+          [
+            // uint256 amount;
+            ethers.parseUnits("1000", 18) - 1n,
+            // uint8 installments;
+            3,
+            // uint16 apy;
+            apy,
+            // uint32 duration;
+            DURATION_3_MONTHS,
+            // uint256 attachedCollateral;
+            initialCollat
+          ]
+        )
+      ).to.be.revertedWithCustomError(MercadoSantaFeContract, "InvalidLoanAmount");
+    });
+
+    it("InvalidLoanDuration.", async function () {
+      const {
+        MercadoSantaFeContract,
+        BodegaContract,
+        USDCTokenContract,
+        XOCTokenContract,
+        alice,
+        bob,
+      } = await loadFixture(deployProtocolFixture);
+
+      const initialCollat = ethers.parseUnits("1000", 6);
+
+      /// Deposit liquidity.
+      await XOCTokenContract.connect(bob).approve(BodegaContract.target, MLARGE);
+      await BodegaContract.connect(bob).deposit(await XOCTokenContract.balanceOf(bob.address), bob.address);
+
+      await USDCTokenContract.connect(alice).approve(MercadoSantaFeContract.target, MLARGE);
+      await MercadoSantaFeContract.connect(alice).depositCollateral(alice.address, initialCollat);
+
+      const borrowAmount = await MercadoSantaFeContract.estimateLoanAmount(initialCollat, 6000);
+      const apy = await MercadoSantaFeContract.calculateAPY(
+        borrowAmount, DURATION_3_MONTHS, initialCollat
+      );
+
+      /// Create first loan.
+      await expect(
+        MercadoSantaFeContract.connect(alice).borrow(
+          [
+            // uint256 amount;
+            ethers.parseUnits("10000", 18),
+            // uint8 installments;
+            52,
+            // uint16 apy;
+            apy,
+            // uint32 duration;
+            DURATION_1_YEAR + 1,
+            // uint256 attachedCollateral;
+            initialCollat
+          ]
+        )
+      ).to.be.revertedWithCustomError(MercadoSantaFeContract, "InvalidLoanDuration");
+
+      /// Create first loan.
+      await expect(
+        MercadoSantaFeContract.connect(alice).borrow(
+          [
+            // uint256 amount;
+            ethers.parseUnits("1000", 18),
+            // uint8 installments;
+            3,
+            // uint16 apy;
+            apy,
+            // uint32 duration;
+            DURATION_1_WEEK - 1,
+            // uint256 attachedCollateral;
+            initialCollat
+          ]
+        )
+      ).to.be.revertedWithCustomError(MercadoSantaFeContract, "InvalidLoanDuration");
+    });
   });
 
   describe("Getting my first loan", function () {

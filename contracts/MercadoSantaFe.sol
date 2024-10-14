@@ -98,10 +98,8 @@ contract MercadoSantaFe {
     error CollateralBellowMaxLtv();
     error DoNotLeaveDust(uint256 _change);
     error InvalidBasisPoint();
-    error InvalidCollateral(address _token);
     error InvalidInput();
     error InvalidIntervalDuration();
-    error InvalidLoanAPY();
     error InvalidLoanAmount();
     error InvalidLoanDuration();
     error InvalidLoanInstallments();
