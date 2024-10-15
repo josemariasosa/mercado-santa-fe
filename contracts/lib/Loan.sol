@@ -8,6 +8,9 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
+// Uncomment this line to use console.log
+import "hardhat/console.sol";
+
 struct Loan {
     address owner;
     /// @dev amount and totalPayment are denominated in pesos.
@@ -72,8 +75,13 @@ library LoanLib {
     ///         if n == (_loan.installments - 1)
     ///         last installment must cover amount + amountInterest + PENALTY; to unlock the collateral.
     function getInstallment(Loan memory _self) internal view returns (uint256) {
+        // console.log("block.timestamp: ", block.timestamp);
+        // console.log("self.createdAt : ", _self.createdAt);
         for (uint i = 0; i < _self.installments; i++) {
-            if (block.timestamp <= _self.createdAt + (intervalDuration(_self) * i + 1)) {
+            // console.log("-----> ", i);
+            // console.log("-----> ", _self.createdAt + (intervalDuration(_self) * i + 1));
+            // console.log("**************************");
+            if (block.timestamp <= _self.createdAt + (intervalDuration(_self) * (i + 1))) {
                 return i;
             }
         }

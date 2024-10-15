@@ -107,7 +107,10 @@ contract BodegaDeChocolates is ERC4626, Ownable { /// <-------- REMOVE OWNABLE
         doTransferOut(asset(), _to, _amount); // send pesos
     }
 
-    function receivePayment(address _from, uint256 _amount) external /* onlyValidMercado */ {
+    function receivePayment(uint256 _amount) external /* onlyValidMercado */ {
+        /// TODO
+        SafeERC20.safeTransferFrom(IERC20(asset()), msg.sender, address(this), _amount);
+        availableAsset += _amount;
         
     }
 

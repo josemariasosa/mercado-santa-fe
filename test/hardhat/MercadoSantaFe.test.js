@@ -5,6 +5,7 @@ const { loadFixture, time } = require("@nomicfoundation/hardhat-network-helpers"
 const {
   deployProtocolFixture
 } = require("./test_setup");
+const exp = require("constants");
 
 const DURATION_3_MONTHS = 3 * 4 * 7 * 24 * 60 * 60;
 const DURATION_1_MONTHS = 1 * 4 * 7 * 24 * 60 * 60;
@@ -368,9 +369,6 @@ describe("Mercado Santa Fe 🏗️ - Borrow and Lending protocol ----", function
 
   describe("Validate loan creation", function () {
 
-    // error InvalidLoanInstallments();
-    // error InvalidUInt16();
-    // error LoanIsFullyPaid();
     // error MaxLoansByUser();
     // error NegativeNumber();
     // error NotAcceptingNewLoans();
@@ -848,6 +846,208 @@ describe("Mercado Santa Fe 🏗️ - Borrow and Lending protocol ----", function
           ]
         )
       ).to.be.revertedWithCustomError(MercadoSantaFeContract, "InvalidLoanDuration");
+    });
+
+    it("InvalidLoanInstallments.", async function () {
+      const {
+        MercadoSantaFeContract,
+        BodegaContract,
+        USDCTokenContract,
+        XOCTokenContract,
+        alice,
+        bob,
+      } = await loadFixture(deployProtocolFixture);
+
+      const initialCollat = ethers.parseUnits("1000", 6);
+
+      /// Deposit liquidity.
+      await XOCTokenContract.connect(bob).approve(BodegaContract.target, MLARGE);
+      await BodegaContract.connect(bob).deposit(await XOCTokenContract.balanceOf(bob.address), bob.address);
+
+      await USDCTokenContract.connect(alice).approve(MercadoSantaFeContract.target, MLARGE);
+      await MercadoSantaFeContract.connect(alice).depositCollateral(alice.address, initialCollat);
+
+      const borrowAmount = await MercadoSantaFeContract.estimateLoanAmount(initialCollat, 6000);
+      const apy = await MercadoSantaFeContract.calculateAPY(
+        borrowAmount, DURATION_3_MONTHS, initialCollat
+      );
+
+      /// Create first loan.
+      await expect(
+        MercadoSantaFeContract.connect(alice).borrow(
+          [
+            // uint256 amount;
+            ethers.parseUnits("10000", 18),
+            // uint8 installments;
+            52 + 1,
+            // uint16 apy;
+            apy,
+            // uint32 duration;
+            DURATION_1_YEAR + 1,
+            // uint256 attachedCollateral;
+            initialCollat
+          ]
+        )
+      ).to.be.revertedWithCustomError(MercadoSantaFeContract, "InvalidLoanInstallments");
+
+      /// Create first loan.
+      await expect(
+        MercadoSantaFeContract.connect(alice).borrow(
+          [
+            // uint256 amount;
+            ethers.parseUnits("1000", 18),
+            // uint8 installments;
+            0,
+            // uint16 apy;
+            apy,
+            // uint32 duration;
+            DURATION_1_WEEK - 1,
+            // uint256 attachedCollateral;
+            initialCollat
+          ]
+        )
+      ).to.be.revertedWithCustomError(MercadoSantaFeContract, "InvalidLoanInstallments");
+    });
+
+    it("LoanIsFullyPaid.", async function () {
+      const {
+        MercadoSantaFeContract,
+        BodegaContract,
+        USDCTokenContract,
+        XOCTokenContract,
+        alice,
+        bob,
+      } = await loadFixture(deployProtocolFixture);
+
+      const initialCollat = ethers.parseUnits("300", 6);
+
+      /// Deposit liquidity.
+      await XOCTokenContract.connect(bob).approve(BodegaContract.target, MLARGE);
+      await BodegaContract.connect(bob).deposit(await XOCTokenContract.balanceOf(bob.address), bob.address);
+
+      await USDCTokenContract.connect(alice).approve(MercadoSantaFeContract.target, MLARGE);
+      await MercadoSantaFeContract.connect(alice).depositCollateral(alice.address, initialCollat);
+
+      const borrowAmount = await MercadoSantaFeContract.estimateLoanAmount(initialCollat, 6000);
+      const apy = await MercadoSantaFeContract.calculateAPY(
+        borrowAmount, DURATION_3_MONTHS, initialCollat
+      );
+
+      // console.log(ethers.formatUnits(initialCollat, 6));
+      // console.log(ethers.formatUnits(borrowAmount, 18));
+
+      /// Create first loan.
+      await MercadoSantaFeContract.connect(alice).borrow(
+        [
+          // uint256 amount;
+          borrowAmount,
+          // uint8 installments;
+          52,
+          // uint16 apy;
+          apy,
+          // uint32 duration;
+          DURATION_1_YEAR,
+          // uint256 attachedCollateral;
+          initialCollat
+        ]
+      );
+
+      const grandDebt = (await MercadoSantaFeContract.getLoanDebtStatus(1))[2];
+      await XOCTokenContract.allocateTo(alice.address,
+        grandDebt - (await XOCTokenContract.balanceOf(alice.address)) + 1n
+      );
+
+      const nextDue = (await MercadoSantaFeContract.getLoanDebtStatus(1))[1];
+      await XOCTokenContract.connect(alice).approve(MercadoSantaFeContract.target, MLARGE);
+
+      /// partial first payment.
+      const firstPayment = nextDue / 3n;
+      const secondPayment = nextDue - firstPayment;
+
+      // console.log(await MercadoSantaFeContract.getLoanDebtStatus(1));
+      expect(await MercadoSantaFeContract.getInstallment(1)).to.be.equal(0);
+      expect((await MercadoSantaFeContract.getLoanDebtStatus(1))[0]).to.be.equal(0);
+      expect((await MercadoSantaFeContract.getLoanDebtStatus(1))[1]).to.be.equal(nextDue);
+      await MercadoSantaFeContract.connect(alice).pay(firstPayment, 1);
+      expect(await MercadoSantaFeContract.getInstallment(1)).to.be.equal(0);
+      expect((await MercadoSantaFeContract.getLoanDebtStatus(1))[0]).to.be.equal(0);
+      expect((await MercadoSantaFeContract.getLoanDebtStatus(1))[1]).to.be.equal(secondPayment);
+      // console.log("*******************************");
+      // console.log(await MercadoSantaFeContract.getLoanDebtStatus(1));
+      await MercadoSantaFeContract.connect(alice).pay(secondPayment, 1);
+      expect(await MercadoSantaFeContract.getInstallment(1)).to.be.equal(0);
+      expect((await MercadoSantaFeContract.getLoanDebtStatus(1))[0]).to.be.equal(0);
+      expect((await MercadoSantaFeContract.getLoanDebtStatus(1))[1]).to.be.equal(0);
+      // console.log("*******************************");
+      // console.log(await MercadoSantaFeContract.getLoanDebtStatus(1));
+
+      const remainingDebt = (await MercadoSantaFeContract.getLoanDebtStatus(1))[2];
+      await expect(
+        MercadoSantaFeContract.connect(alice).pay(remainingDebt + 1n, 1)
+      ).to.be.revertedWithCustomError(MercadoSantaFeContract, "PayOnlyWhatYouOwn");
+    });
+
+    it("MaxLoansByUser.", async function () {
+      const {
+        MercadoSantaFeContract,
+        BodegaContract,
+        USDCTokenContract,
+        XOCTokenContract,
+        alice,
+        bob,
+      } = await loadFixture(deployProtocolFixture);
+
+      const initialCollat = ethers.parseUnits("800", 6);
+      const individualCollat = ethers.parseUnits("200", 6);
+
+      /// Deposit liquidity.
+      await XOCTokenContract.connect(bob).approve(BodegaContract.target, MLARGE);
+      await BodegaContract.connect(bob).deposit(await XOCTokenContract.balanceOf(bob.address), bob.address);
+
+      await USDCTokenContract.connect(alice).approve(MercadoSantaFeContract.target, MLARGE);
+      await MercadoSantaFeContract.connect(alice).depositCollateral(alice.address, initialCollat);
+
+      const borrowAmount = await MercadoSantaFeContract.estimateLoanAmount(individualCollat, 6000);
+      const apy = await MercadoSantaFeContract.calculateAPY(
+        borrowAmount, DURATION_3_MONTHS, initialCollat
+      );
+
+      for (let i = 0; i < (await MercadoSantaFeContract.getMaxLoansPerUser()); i++) {
+        await MercadoSantaFeContract.connect(alice).borrow(
+          [
+            // uint256 amount;
+            borrowAmount,
+            // uint8 installments;
+            52,
+            // uint16 apy;
+            apy,
+            // uint32 duration;
+            DURATION_1_YEAR,
+            // uint256 attachedCollateral;
+            individualCollat
+          ]
+        );
+        expect(await MercadoSantaFeContract.getUserDebt(alice.address)).to.be.equal(
+          (1n + BigInt(i)) * calcGrandTotal(borrowAmount, apy, await MercadoSantaFeContract.getFixedLoanFee())
+        );
+      }
+
+      await expect(
+        MercadoSantaFeContract.connect(alice).borrow(
+          [
+            // uint256 amount;
+            borrowAmount,
+            // uint8 installments;
+            52,
+            // uint16 apy;
+            apy,
+            // uint32 duration;
+            DURATION_1_YEAR,
+            // uint256 attachedCollateral;
+            individualCollat
+          ]
+        )
+      ).to.be.revertedWithCustomError(MercadoSantaFeContract, "MaxLoansByUser");
     });
   });
 

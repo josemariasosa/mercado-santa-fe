@@ -175,6 +175,10 @@ contract MercadoSantaFe {
         return _getUserActiveLoans(users[_account]);
     }
 
+    function getMaxLoansPerUser() external pure returns (uint256) {
+        return MAX_LOANS_BY_USER;
+    }
+
     /// @dev total debt distributed on all the loans.
     function getUserDebt(address _account) external view returns (uint256 _amount) {
         User memory _user = users[_account];
@@ -306,7 +310,8 @@ contract MercadoSantaFe {
         loan.totalPayment += _amount;
 
         /// sending payment to Bodega
-        // IERC20(bodega.asset()).safeIncreaseAllowance();
+        IERC20(bodega.asset()).safeIncreaseAllowance(address(bodega), _amount);
+        bodega.receivePayment(_amount);
     }
 
     /// Core funtionalities 🌎 -----------------------------------------------------------
@@ -431,18 +436,18 @@ contract MercadoSantaFe {
         uint256 whereAmI = _loan.getInstallment();
 
 
-        console.log("today: ", today);
-        console.log("intervalDuration: ", intervalDuration);
-        console.log("grandDebt: ", grandDebt);
-        console.log("payment: ", payment);
-        console.log("whereAmI: ", whereAmI);
+        // console.log("today: ", today);
+        // console.log("intervalDuration: ", intervalDuration);
+        // console.log("grandDebt: ", grandDebt);
+        // console.log("payment: ", payment);
+        // console.log("whereAmI: ", whereAmI);
 
         uint256 remainingDebt = grandDebt - _loan.totalPayment;
 
         if (whereAmI == 0) {
             return LoanDebtStatus(
                 0,
-                payment,
+                _loan.totalPayment >= payment ? 0 : payment - _loan.totalPayment,
                 grandDebt - _loan.totalPayment
             );
         } else if (whereAmI < _loan.installments) { // TODO: do I have to (- 1)? we are the last
