@@ -262,7 +262,7 @@ contract MercadoSantaFe {
         if (_amount > balance) revert NotEnoughBalance();
         uint256 change = balance - _amount;
 
-        if (change < minCollateralAmount) revert DoNotLeaveDust(change);
+        if (change > 0 && change < minCollateralAmount) revert DoNotLeaveDust(change);
         users[msg.sender].balanceCollat = change;
         doTransferOut(collateral, msg.sender, _amount);
     }
