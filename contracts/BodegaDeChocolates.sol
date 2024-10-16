@@ -26,7 +26,7 @@ contract BodegaDeChocolates is ERC4626, Ownable { /// <-------- REMOVE OWNABLE
     using SafeERC20 for IERC20;
 
     IMercadoSantaFe public immutable mercado;
-    bool public acceptingNewLoans;
+    // bool public acceptingNewLoans;
 
     uint256 public availableAsset; // ready to be borrowed.
     uint256 public totalInCDP;     // lock in a loan, in pesos
@@ -45,7 +45,7 @@ contract BodegaDeChocolates is ERC4626, Ownable { /// <-------- REMOVE OWNABLE
         Ownable(_owner)
         ERC4626(_asset)
         ERC20("Mercado: USDC <> XOC alphaV1", "MSF0001") {
-        acceptingNewLoans = true;
+        // acceptingNewLoans = true;
 
         headQueueWOS = 1;
         tailQueueWOS = 1;

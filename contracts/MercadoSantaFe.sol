@@ -81,7 +81,7 @@ contract MercadoSantaFe {
     mapping (address => User) public users;
 
     /// @dev LoanId => Loan.
-    mapping (uint256 => Loan) public loans;
+    mapping (uint256 => Loan) private loans;
 
     /// @dev refers to the original amount loaned, before interest is added.
     uint256 public loanPrincipal;
@@ -105,17 +105,17 @@ contract MercadoSantaFe {
     error InvalidLoanInstallments();
     error InvalidUInt16();
     error LessThanMinCollatAmount();
+    error LoanDoesNotExist(uint256 _loanId);
     error LoanIsFullyPaid();
     error MaxLoansByUser();
     error NegativeNumber();
-    error NotAcceptingNewLoans();
     error NotEnoughBalance();
     error NotEnoughCollatToBorrow();
     error NotEnoughLiquidity();
     error PayOnlyWhatYouOwn(uint256 _remainingDebt);
 
-    modifier loansOpen {
-        if (!bodega.acceptingNewLoans()) revert NotAcceptingNewLoans();
+    modifier loanExists(uint256 _loanId) {
+        _assertLoanExists(_loanId);
         _;
     }
 
@@ -148,31 +148,39 @@ contract MercadoSantaFe {
     /// Public View functions -----------------------------------------------------------
 
     /// @dev Duration of the loan, divided by the number of intervals.
-    function getIntervalDuration(uint256 _loanId) external view returns (uint256) {
-        if (_loanId == 0) revert InvalidInput();
+    function getIntervalDuration(
+        uint256 _loanId
+    ) external view loanExists(_loanId) returns (uint256) {
         return loans[_loanId].intervalDuration();
     }
 
-    function getInstallment(uint256 _loanId) external view returns (uint256) {
-        if (_loanId == 0) revert InvalidInput();
+    function getInstallment(
+        uint256 _loanId
+    ) external view loanExists(_loanId) returns (uint256) {
         return loans[_loanId].getInstallment();
     }
 
     function getLoanDebtStatus(
         uint256 _loanId
-    ) external view returns (LoanDebtStatus memory) {
-        if (_loanId == 0) revert InvalidInput();
+    ) external view loanExists(_loanId) returns (LoanDebtStatus memory) {
         return _loanDebtStatus(loans[_loanId]);
     }
 
-    function getLoan(uint256 _loanId) external view returns (Loan memory) {
-        if (_loanId == 0) revert InvalidInput();
+    function getLoan(
+        uint256 _loanId
+    ) external view loanExists(_loanId) returns (Loan memory) {
         return loans[_loanId];
     }
 
-    /// @dev max active loans per user is given by `MAX_LOANS_BY_USER`.
-    function getActiveLoans(address _account) external view returns (uint8) {
-        return _getUserActiveLoans(users[_account]);
+    // /// @dev max active loans per user is given by `MAX_LOANS_BY_USER`.
+    // function getActiveLoans(address _account) external view returns (uint8) {
+    //     return _getUserActiveLoans(users[_account]);
+    // }
+
+    function getUsersLoanIds(
+        address _account
+    ) external view returns (uint256[MAX_LOANS_BY_USER] memory) {
+        return users[_account].loanIds;
     }
 
     function getMaxLoansPerUser() external pure returns (uint256) {
@@ -269,7 +277,7 @@ contract MercadoSantaFe {
 
     /// Borrowing Pesos 🪙 ---------------------------------------------------------------
 
-    function borrow(LoanForm memory _form) external loansOpen {
+    function borrow(LoanForm memory _form) external {
         User storage user = users[msg.sender];
 
         /// Lock Collateral
@@ -279,7 +287,7 @@ contract MercadoSantaFe {
         _borrow(user, _form, msg.sender);
     }
 
-    function depositAndBorrow(LoanForm memory _form) external loansOpen {
+    function depositAndBorrow(LoanForm memory _form) external {
         User storage user = users[msg.sender];
 
         /// Get Collateral
@@ -291,9 +299,7 @@ contract MercadoSantaFe {
 
     /// Pay what you own 🪙 --------------------------------------------------------------
 
-    function pay(uint256 _amount, uint256 _loanId) external {
-        if (_loanId == 0) revert InvalidInput();
-
+    function pay(uint256 _amount, uint256 _loanId) external loanExists(_loanId) {
         Loan storage loan = loans[_loanId];
 
         if (loan.isFullyPaid()) revert LoanIsFullyPaid();
@@ -422,6 +428,7 @@ contract MercadoSantaFe {
 
     /// @dev this function consider different scenarios, using the block.timestamp.
     function _loanDebtStatus(Loan memory _loan) internal view returns (LoanDebtStatus memory _status) {
+
         uint256 today = block.timestamp;
         uint256 intervalDuration = _loan.intervalDuration();
 
@@ -509,13 +516,13 @@ contract MercadoSantaFe {
         return unsigned256(price);
     }
 
-    function _getUserActiveLoans(User memory _user) internal pure returns (uint8 _res) {
-        uint256[MAX_LOANS_BY_USER] memory loanIds = _user.loanIds;
+    // function _getUserActiveLoans(User memory _user) internal pure returns (uint8 _res) {
+    //     uint256[MAX_LOANS_BY_USER] memory loanIds = _user.loanIds;
         
-        for (uint i; i < MAX_LOANS_BY_USER; i++) {
-            if (loanIds[i] > 0) _res++;
-        }
-    }
+    //     for (uint i; i < MAX_LOANS_BY_USER; i++) {
+    //         if (loanIds[i] > 0) _res++;
+    //     }
+    // }
 
     function safe16(uint256 _amount) private pure returns (uint16) {
         if (_amount > type(uint16).max) revert InvalidUInt16();
@@ -534,5 +541,9 @@ contract MercadoSantaFe {
 
     function doTransferOut(address _asset, address _to, uint256 _amount) private {
         IERC20(_asset).safeTransfer(_to, _amount);
+    }
+
+    function _assertLoanExists(uint256 _loanId) private view {
+        if (_loanId == 0 || _loanId >= nextLoanId) revert LoanDoesNotExist(_loanId);
     }
 }

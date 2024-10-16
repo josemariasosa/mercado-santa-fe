@@ -369,9 +369,6 @@ describe("Mercado Santa Fe 🏗️ - Borrow and Lending protocol ----", function
 
   describe("Validate loan creation", function () {
 
-    // error MaxLoansByUser();
-    // error NegativeNumber();
-    // error NotAcceptingNewLoans();
     // error NotEnoughBalance();
     // error NotEnoughLiquidity();
     // error PayOnlyWhatYouOwn(uint256 _remainingDebt);
@@ -619,26 +616,26 @@ describe("Mercado Santa Fe 🏗️ - Borrow and Lending protocol ----", function
       ).to.be.revertedWithCustomError(MercadoSantaFeContract, "InvalidBasisPoint");
     });
 
-    it("InvalidInput.", async function () {
+    it("InvalidInput && LoanDoesNotExist.", async function () {
       const {
         MercadoSantaFeContract,
       } = await loadFixture(deployProtocolFixture);
 
       await expect(
         MercadoSantaFeContract.getIntervalDuration(0)
-      ).to.be.revertedWithCustomError(MercadoSantaFeContract, "InvalidInput");
+      ).to.be.revertedWithCustomError(MercadoSantaFeContract, "LoanDoesNotExist");
 
       await expect(
         MercadoSantaFeContract.getInstallment(0)
-      ).to.be.revertedWithCustomError(MercadoSantaFeContract, "InvalidInput");
+      ).to.be.revertedWithCustomError(MercadoSantaFeContract, "LoanDoesNotExist");
 
       await expect(
         MercadoSantaFeContract.getLoanDebtStatus(0)
-      ).to.be.revertedWithCustomError(MercadoSantaFeContract, "InvalidInput");
+      ).to.be.revertedWithCustomError(MercadoSantaFeContract, "LoanDoesNotExist");
 
       await expect(
         MercadoSantaFeContract.getLoan(0)
-      ).to.be.revertedWithCustomError(MercadoSantaFeContract, "InvalidInput");
+      ).to.be.revertedWithCustomError(MercadoSantaFeContract, "LoanDoesNotExist");
 
       await expect(
         MercadoSantaFeContract.calculateAPY(0, 1, 2)
@@ -662,7 +659,7 @@ describe("Mercado Santa Fe 🏗️ - Borrow and Lending protocol ----", function
 
       await expect(
         MercadoSantaFeContract.pay(1, 0)
-      ).to.be.revertedWithCustomError(MercadoSantaFeContract, "InvalidInput");
+      ).to.be.revertedWithCustomError(MercadoSantaFeContract, "LoanDoesNotExist");
     });
 
     it("InvalidIntervalDuration.", async function () {
