@@ -132,16 +132,16 @@ contract MercadoSantaFe {
 
         nextLoanId = 1; // loan-id 0 means no loan at all.
 
-        uint8 _collatDecimals = IERC20Metadata(address(_collateral)).decimals();
-        uint8 _pesosDecimals = IERC20Metadata(_bodega.asset()).decimals();
-        if (_pesosDecimals > _collatDecimals) {
-            _decimalsOffset = _pesosDecimals - _collatDecimals;
+        uint8 collatDecimals = IERC20Metadata(address(_collateral)).decimals();
+        uint8 pesosDecimals = IERC20Metadata(_bodega.asset()).decimals();
+        if (pesosDecimals > collatDecimals) {
+            _decimalsOffset = pesosDecimals - collatDecimals;
         }
         // Keep this constant factor at hand for Exchange Rate conversion.
         _collat2PesosConversionConstant = 10 ** (
             _collatToPesosOracle.decimals()
             + 18
-            - _pesosDecimals
+            - pesosDecimals
         );
     }
 
