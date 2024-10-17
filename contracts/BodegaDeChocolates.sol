@@ -26,7 +26,6 @@ contract BodegaDeChocolates is ERC4626, Ownable { /// <-------- REMOVE OWNABLE
     using SafeERC20 for IERC20;
 
     IMercadoSantaFe public immutable mercado;
-    // bool public acceptingNewLoans;
 
     uint256 public availableAsset; // ready to be borrowed.
     uint256 public totalInCDP;     // lock in a loan, in pesos
@@ -45,7 +44,6 @@ contract BodegaDeChocolates is ERC4626, Ownable { /// <-------- REMOVE OWNABLE
         Ownable(_owner)
         ERC4626(_asset)
         ERC20("Mercado: USDC <> XOC alphaV1", "MSF0001") {
-        // acceptingNewLoans = true;
 
         headQueueWOS = 1;
         tailQueueWOS = 1;
@@ -115,6 +113,19 @@ contract BodegaDeChocolates is ERC4626, Ownable { /// <-------- REMOVE OWNABLE
     }
 
     // withdraw is never that simple !
+    /** @dev See {IERC4626-withdraw}. */
+    function withdraw(uint256 assets, address receiver, address owner) public override returns (uint256) {
+        uint256 maxAssets = maxWithdraw(owner);
+        if (assets > maxAssets) {
+            revert ERC4626ExceededMaxWithdraw(owner, assets, maxAssets);
+        }
+
+        uint256 shares = previewWithdraw(assets);
+        _withdraw(_msgSender(), receiver, owner, assets, shares);
+
+        return shares;
+    }
+
     /// @dev Withdraw/redeem common workflow.
     function _withdraw(
         address caller,
@@ -196,18 +207,7 @@ contract BodegaDeChocolates is ERC4626, Ownable { /// <-------- REMOVE OWNABLE
         wos[_id] = WithdrawOrder(_receiver, _assets);
     }
 
-    //     /** @dev See {IERC4626-withdraw}. */
-    // function withdraw(uint256 assets, address receiver, address owner) public override returns (uint256) {
-    //     uint256 maxAssets = maxWithdraw(owner);
-    //     if (assets > maxAssets) {
-    //         revert ERC4626ExceededMaxWithdraw(owner, assets, maxAssets);
-    //     }
 
-    //     uint256 shares = previewWithdraw(assets);
-    //     _withdraw(_msgSender(), receiver, owner, assets, shares);
-
-    //     return shares;
-    // }
 
     // /** @dev See {IERC4626-redeem}. */
     // function redeem(uint256 shares, address receiver, address owner) public override returns (uint256) {
