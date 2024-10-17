@@ -54,7 +54,7 @@ contract MercadoSantaFe {
 
     /// @dev How many installments?
     uint8 private constant MAX_INSTALLMENTS = 52;
-    uint8 private constant MIN_INSTALLMENTS = 1;
+    uint8 private constant MIN_INSTALLMENTS = 2; // 2 installments are required by loanDebtStatus
 
     /// @dev APY is always in basis point 8.00% == 800;
     uint16 private constant BASE_APY_BP = 8_00;
@@ -172,10 +172,10 @@ contract MercadoSantaFe {
         return loans[_loanId];
     }
 
-    // /// @dev max active loans per user is given by `MAX_LOANS_BY_USER`.
-    // function getActiveLoans(address _account) external view returns (uint8) {
-    //     return _getUserActiveLoans(users[_account]);
-    // }
+    /// @dev max active loans per user is given by `MAX_LOANS_BY_USER`.
+    function getActiveLoans(address _account) external view returns (uint8) {
+        return _getUserActiveLoans(users[_account]);
+    }
 
     function getUsersLoanIds(
         address _account
@@ -450,6 +450,8 @@ contract MercadoSantaFe {
         // console.log("whereAmI: ", whereAmI);
 
         uint256 remainingDebt = grandDebt - _loan.totalPayment;
+        uint256 totalDebtNow = payment * whereAmI;
+        uint256 totalDebtNext;
 
         if (whereAmI == 0) {
             return LoanDebtStatus(
@@ -457,22 +459,23 @@ contract MercadoSantaFe {
                 _loan.totalPayment >= payment ? 0 : payment - _loan.totalPayment,
                 grandDebt - _loan.totalPayment
             );
-        } else if (whereAmI < _loan.installments) { // TODO: do I have to (- 1)? we are the last
-            // uint256 maturedDebt = FIXED_LOAN_FEE + (_loan.installments - 1) * paymen
-            /// I AM THE LAST --
+        } else if (whereAmI == _loan.installments) { // LATE 🌙
             return LoanDebtStatus({
-                maturedDebt: _loan.totalPayment >= grandDebt ? 0 : remainingDebt,
-                nextInstallment: _loan.totalPayment >= grandDebt ? 0 : remainingDebt,
+                maturedDebt: remainingDebt,
+                nextInstallment: remainingDebt,
+                remainingDebt: remainingDebt
+            });
+        } else if (whereAmI == (_loan.installments - 1)) { // LAST INSTALLMENT
+            return LoanDebtStatus({
+                maturedDebt: _loan.totalPayment >= totalDebtNow ? 0 : totalDebtNow - _loan.totalPayment,
+                nextInstallment: remainingDebt,
                 remainingDebt: remainingDebt
             });
         } else {
-            uint256 totalDebtNow = payment * whereAmI;
-            uint256 totalDebtNext = payment * (whereAmI + 1);
-            uint256 remainingDebtNow = totalDebtNow - _loan.totalPayment;
-            uint256 remainingDebtNext = totalDebtNext - _loan.totalPayment;
+            totalDebtNext = payment * (whereAmI + 1);
             return LoanDebtStatus({
-                maturedDebt: _loan.totalPayment >= totalDebtNow ? 0 : remainingDebtNow,
-                nextInstallment: _loan.totalPayment >= totalDebtNext ? 0 : remainingDebtNext,
+                maturedDebt: _loan.totalPayment >= totalDebtNow ? 0 : totalDebtNow - _loan.totalPayment,
+                nextInstallment: _loan.totalPayment >= totalDebtNext ? 0 : totalDebtNext - _loan.totalPayment,
                 remainingDebt: _loan.totalPayment >= grandDebt ? 0 : remainingDebt
             });
         }
@@ -516,13 +519,13 @@ contract MercadoSantaFe {
         return unsigned256(price);
     }
 
-    // function _getUserActiveLoans(User memory _user) internal pure returns (uint8 _res) {
-    //     uint256[MAX_LOANS_BY_USER] memory loanIds = _user.loanIds;
+    function _getUserActiveLoans(User memory _user) internal pure returns (uint8 _res) {
+        uint256[MAX_LOANS_BY_USER] memory loanIds = _user.loanIds;
         
-    //     for (uint i; i < MAX_LOANS_BY_USER; i++) {
-    //         if (loanIds[i] > 0) _res++;
-    //     }
-    // }
+        for (uint i; i < MAX_LOANS_BY_USER; i++) {
+            if (loanIds[i] > 0) _res++;
+        }
+    }
 
     function safe16(uint256 _amount) private pure returns (uint16) {
         if (_amount > type(uint16).max) revert InvalidUInt16();
