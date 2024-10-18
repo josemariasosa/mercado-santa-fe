@@ -25,7 +25,7 @@ contract BodegaDeChocolates is ERC4626, Ownable { /// <-------- REMOVE OWNABLE
 
     using SafeERC20 for IERC20;
 
-    IMercadoSantaFe public immutable mercado;
+    IMercadoSantaFe public mercado;
 
     uint256 public availableAsset; // ready to be borrowed.
     uint256 public totalInCDP;     // lock in a loan, in pesos
@@ -40,6 +40,13 @@ contract BodegaDeChocolates is ERC4626, Ownable { /// <-------- REMOVE OWNABLE
 
     mapping(address => uint256) public availableBalance;
 
+    error InvalidInput();
+
+    modifier onlyValidMercado {
+        require(msg.sender == address(mercado), "Invalid Mercado Santa Fe");
+        _;
+    }
+
     constructor(IERC20 _asset, address _owner)
         Ownable(_owner)
         ERC4626(_asset)
@@ -47,6 +54,12 @@ contract BodegaDeChocolates is ERC4626, Ownable { /// <-------- REMOVE OWNABLE
 
         headQueueWOS = 1;
         tailQueueWOS = 1;
+    }
+
+    function updateMercado(address _mercado) external onlyOwner {
+        if (_mercado == address(0)) revert InvalidInput();
+
+        mercado = IMercadoSantaFe(_mercado);
     }
 
     function totalAssets() public view override returns (uint256) {
@@ -99,13 +112,13 @@ contract BodegaDeChocolates is ERC4626, Ownable { /// <-------- REMOVE OWNABLE
         emit Deposit(caller, receiver, assets, shares);
     }
 
-    function lend(address _to, uint256 _amount) external /* onlyValidMercado */ {
+    function lend(address _to, uint256 _amount) external onlyValidMercado {
         availableAsset -= _amount;
 
         doTransferOut(asset(), _to, _amount); // send pesos
     }
 
-    function receivePayment(uint256 _amount) external /* onlyValidMercado */ {
+    function receivePayment(uint256 _amount) external onlyValidMercado {
         /// TODO
         SafeERC20.safeTransferFrom(IERC20(asset()), msg.sender, address(this), _amount);
         availableAsset += _amount;
@@ -200,27 +213,27 @@ contract BodegaDeChocolates is ERC4626, Ownable { /// <-------- REMOVE OWNABLE
         }
     }
 
-    function _createWithdrawOrder(address _receiver, uint256 _assets) private {
-        totalInCDP -= _assets;
-        totalInWOS += _assets;
-        uint256 _id = tailQueueWOS++;
-        wos[_id] = WithdrawOrder(_receiver, _assets);
-    }
-
-
-
-    // /** @dev See {IERC4626-redeem}. */
-    // function redeem(uint256 shares, address receiver, address owner) public override returns (uint256) {
-    //     uint256 maxShares = maxRedeem(owner);
-    //     if (shares > maxShares) {
-    //         revert ERC4626ExceededMaxRedeem(owner, shares, maxShares);
-    //     }
-
-    //     uint256 assets = previewRedeem(shares);
-    //     _withdraw(_msgSender(), receiver, owner, assets, shares);
-
-    //     return assets;
+    // function _createWithdrawOrder(address _receiver, uint256 _assets) private {
+    //     totalInCDP -= _assets;
+    //     totalInWOS += _assets;
+    //     uint256 _id = tailQueueWOS++;
+    //     wos[_id] = WithdrawOrder(_receiver, _assets);
     // }
+
+
+
+    /** @dev See {IERC4626-redeem}. */
+    function redeem(uint256 shares, address receiver, address owner) public override returns (uint256) {
+        uint256 maxShares = maxRedeem(owner);
+        if (shares > maxShares) {
+            revert ERC4626ExceededMaxRedeem(owner, shares, maxShares);
+        }
+
+        uint256 assets = previewRedeem(shares);
+        _withdraw(_msgSender(), receiver, owner, assets, shares);
+
+        return assets;
+    }
 
     function doTransferIn(address _asset, address _from, uint256 _amount) private {
         IERC20(_asset).safeTransferFrom(_from, address(this), _amount);
@@ -238,17 +251,24 @@ contract BodegaDeChocolates is ERC4626, Ownable { /// <-------- REMOVE OWNABLE
         wos[last] = WithdrawOrder(_receiver, _assets);
     }
 
-    function _partialDequeueOrder() private returns (WithdrawOrder memory _order) {
-        require(tailQueueWOS > headQueueWOS);
-        _order = wos[headQueueWOS];
-        headQueueWOS++;
-    }
+    // function _partialDequeueOrder() private returns (WithdrawOrder memory _order) {
+    //     require(tailQueueWOS > headQueueWOS);
+    //     _order = wos[headQueueWOS];
+    //     headQueueWOS++;
+    // }
 
-    function _totalDequeueOrder() private {
-        require(tailQueueWOS > headQueueWOS);
-        WithdrawOrder memory _order = wos[headQueueWOS];
-        headQueueWOS++;
-        availableBalance[_order.account] += _order.amount;
+    // function _totalDequeueOrder() private {
+    //     require(tailQueueWOS > headQueueWOS);
+    //     WithdrawOrder memory _order = wos[headQueueWOS];
+    //     headQueueWOS++;
+    //     availableBalance[_order.account] += _order.amount;
+    // }
+
+    function finishWithdraw() external {
+        uint256 amount = availableBalance[msg.sender];
+        require(amount > 0, "No funds available.");
+        availableBalance[msg.sender] -= amount;
+        doTransferOut(asset(), msg.sender, amount);
     }
 
     // function _dequeueOrder() private returns (WithdrawOrder memory _order) {

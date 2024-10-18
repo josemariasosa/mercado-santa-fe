@@ -50,7 +50,7 @@ contract MercadoSantaFe {
 
     /// @dev Amount is in pesos.
     uint256 private constant MAX_CREDIT_AMOUNT = 10_000 * 10**18;
-    uint256 private constant MIN_CREDIT_AMOUNT =  1_000 * 10**18;
+    uint256 public constant MIN_CREDIT_AMOUNT = 100 * 10**18;
 
     /// @dev How many installments?
     uint8 private constant MAX_INSTALLMENTS = 52;

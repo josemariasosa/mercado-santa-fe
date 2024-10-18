@@ -767,7 +767,7 @@ describe("Mercado Santa Fe 🏗️ - Borrow and Lending protocol ----", function
         MercadoSantaFeContract.connect(alice).borrow(
           [
             // uint256 amount;
-            ethers.parseUnits("1000", 18) - 1n,
+            (await MercadoSantaFeContract.MIN_CREDIT_AMOUNT()) - 1n,
             // uint8 installments;
             3,
             // uint16 apy;

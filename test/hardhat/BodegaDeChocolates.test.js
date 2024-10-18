@@ -45,7 +45,13 @@ describe("Bodega de Chocolates 🍫 ----", function () {
       expect(await BodegaContract.totalSupply()).to.be.equal(initialSupply);
       expect(await BodegaContract.totalAssets()).to.be.equal(initialSupply);
 
-      await BodegaContract.connect(bob)
+      const initialShares = await BodegaContract.balanceOf(bob.address);
+      expect(await BodegaContract.availableBalance(bob.address)).to.be.equal(0);
+      await BodegaContract.connect(bob).redeem(initialShares, bob.address, bob.address);
+      expect(await BodegaContract.availableBalance(bob.address)).to.be.equal(initialSupply);
+
+      expect(await XOCTokenContract.balanceOf(bob.address)).to.be.equal(0);
+      
 
       // await USDCTokenContract.connect(alice).approve(MercadoSantaFeContract.target, MLARGE);
       // await MercadoSantaFeContract.connect(alice).depositCollateral(alice.address, initialCollat);

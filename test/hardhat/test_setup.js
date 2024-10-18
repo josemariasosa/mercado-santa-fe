@@ -37,9 +37,11 @@ async function deployProtocolFixture() {
     USDCTokenContract.target,
     BodegaContract.target,
     USDToMXNOracleContract.target,
-    ethers.parseUnits("20", 6) // 20 usd
+    ethers.parseUnits("10", 6) // 10 usd
   );
   await MercadoSantaFeContract.waitForDeployment();
+
+  await BodegaContract.updateMercado(MercadoSantaFeContract.target);
 
   /// Token allocation.
 
