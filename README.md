@@ -1,4 +1,4 @@
-# Mercado México 🍉
+# Mercado Santa Fe 🏦
 
 <div style="text-align: center;">
   <img src="media/cover.jpg" alt="Mercado México Cover" width="500"/>
@@ -7,6 +7,33 @@
 Lending and borrowing protocol for Fixed-Rate Loans in Mexican Pesos.
 
 ## Project Description
+
+**Mercado Santa Fe** is a set of smart contracts deployed on the `Base mainnet` 🔵, designed to serve two key user groups:
+
+1. **Investors**: Generate yield on their [**XOC Tokens**](https://www.xocolatl.finance/), a stablecoin pegged to the Mexican Peso.
+2. **Borrowers**: Collateralize USDC to secure fixed-rate loans with repayment plans in Mexican Peso. Borrowers can choose between weekly or monthly repayment schedules, making small, manageable payments over time.
+
+What sets **Mercado Santa Fe** apart from other lending protocols like Aave or Compound is the introduction of fixed interest rates and fixed payment plans. This structure is designed to appeal to borrowers familiar with traditional loan systems, offering predictable payment terms that help align decentralized finance (DeFi) lending with the needs of the average Mexican, and Latam, user.
+
+## Deployed Contracts
+
+Three contracts have been deployed to `Base mainnet`:
+
+- [**USDCToMXNPriceFeed:**](https://basescan.org/address/0x85e2a5B46DB3Dc1E78E3238d7Cd80B3ff5bB0951) A price feed that provides real-time conversion rates between the collateral (USDC) and the Mexican Peso (MXN). This ensures accurate collateral valuation when creating loans.
+- [**BodegaDeChocolates:**](https://basescan.org/address/0x9Deb4F3c3C0E343Cf0903598F37B2C13622a0B32) A vault contract managing investor deposits of XOC tokens. It mints shares for investors, tracking their contribution to the vault. These shares can later be redeemed for the original investment plus any interest generated from borrower loans.
+- [**MercadoSantaFe:**](https://basescan.org/address/0xd10810E5a0773D417f5DABad107C50420e409689) The core lending contract where borrowers deposit USDC as collateral and set loan terms such as the loan amount, duration, and payment plan. Borrowers benefit from fixed-rate loans with flexible installment options.
+
+## Tokens and Contract Addresses
+
+| Name |        Address (link to BaseScan)          |
+| ---- | ------------------------------------------ |
+| USDC | [0x833589fcd6edb6e08f4c7c32d4f71b54bda02913](https://basescan.org/address/0x833589fcd6edb6e08f4c7c32d4f71b54bda02913) |
+| XOC  | [0xa411c9Aa00E020e4f88Bc19996d29c5B7ADB4ACf](https://basescan.org/address/0xa411c9Aa00E020e4f88Bc19996d29c5B7ADB4ACf) |
+| USDCToMXNPriceFeed  | [0x85e2a5B46DB3Dc1E78E3238d7Cd80B3ff5bB0951](https://basescan.org/address/0x85e2a5B46DB3Dc1E78E3238d7Cd80B3ff5bB0951) |
+| BodegaDeChocolates  | [0x9Deb4F3c3C0E343Cf0903598F37B2C13622a0B32](https://basescan.org/address/0x9Deb4F3c3C0E343Cf0903598F37B2C13622a0B32) |
+| MercadoSantaFe  | [0xd10810E5a0773D417f5DABad107C50420e409689](https://basescan.org/address/0xd10810E5a0773D417f5DABad107C50420e409689) |
+
+## Project Details
 
 The objective of this project is to create an app that allows users to request a fixed-rate loan in Mexican pesos.
 
@@ -54,115 +81,45 @@ Make sure you have the following installed:
 ## Installation
 
 1. Clone the repository:
-   ```bash
-   git clone <repository-url>
-   cd <repository-name>
+
+```bash
+git clone https://github.com/josemariasosa/mercado-santa-fe
+cd mercado-santa-fe
+```
+
 Install the dependencies:
-bash
-Copy code
-npm install
-or, if you are using yarn:
-bash
-Copy code
+
+```bash
 yarn install
-Compile Contracts
+```
+
+## Compile Contracts
+
 To compile the smart contracts, use the following command:
 
-bash
-Copy code
+```bash
 npx hardhat compile
-Run Tests
+```
+
+## Run Tests
+
 You can run the tests with this command:
 
-bash
-Copy code
+```bash
 npx hardhat test
-Deploy Contracts
-Make sure to configure your network in the hardhat.config.js file, and then use the following command to deploy:
-
-bash
-Copy code
-npx hardhat run scripts/deploy.js --network <network-name>
-License
-This project is licensed under the MIT License.
-
-Lending and
-
-# Proyecto de Préstamo a Tasa Fija en Pesos Mexicanos
-
-## Descripción
-
-El objetivo de este proyecto es crear una aplicación que le permita a los usuarios pedir un préstamo de renta fija en pesos mexicanos.
-
-Inicialmente, los préstamos serán colateralizados mediante dólares estadounidenses. Esto significa que el usuario bloqueará una cantidad N de dólares, lo que le brindará una cantidad X de pesos mexicanos, con una tasa fija. Por ejemplo, una tasa fija del 8.00% anual.
-
-El usuario podrá definir un plan de pagos de acuerdo a sus necesidades.
-
-Si el usuario no cumple con las fechas de pago o no cubre el total al finalizar el periodo, el colateral será liquidado para cubrir la deuda más los gastos por penalización.
-
-Los préstamos pueden ser utilizados para pagar servicios como luz, agua, gas, entre otros.
-
-La visión a largo/mediano plazo es automatizar el proceso de préstamos para mover el riesgo a inversionistas dispuestos a generar rendimientos, permitiendo a los usuarios obtener microcréditos sin la necesidad de colateralizarse.
-
-## Tecnologías Utilizadas
-
-- **Solidity**: Lenguaje para el desarrollo de contratos inteligentes.
-- **Hardhat**: Entorno de desarrollo para Ethereum que facilita la compilación, prueba y despliegue de contratos inteligentes.
-
-## Requisitos
-
-Asegúrate de tener instalados los siguientes elementos:
-
-- Node.js (versión LTS recomendada)
-- npm o yarn
-- Hardhat
-
-## Instalación
-
-1. Clona el repositorio:
-   ```bash
-   git clone <url-del-repositorio>
-   cd <nombre-del-repositorio>
-Instala las dependencias:
-bash
-Copy code
-npm install
-o, si usas yarn:
-bash
-Copy code
-yarn install
-Compilar Contratos
-Para compilar los contratos inteligentes, utiliza el siguiente comando:
-
-bash
-Copy code
-npx hardhat compile
-Probar Contratos
-Puedes ejecutar las pruebas usando el siguiente comando:
-
-bash
-Copy code
-npx hardhat test
-Desplegar Contratos
-Asegúrate de configurar tu red en el archivo hardhat.config.js y utiliza el comando para desplegar:
-
-bash
-Copy code
-npx hardhat run scripts/deploy.js --network <red>
-Licencia
-Este proyecto está bajo la Licencia MIT.
-
-This project demonstrates a basic Hardhat use case. It comes with a sample contract, a test for that contract, and a Hardhat Ignition module that deploys that contract.
-
-Try running some of the following tasks:
-
-```shell
-npx hardhat help
-npx hardhat test
-REPORT_GAS=true npx hardhat test
-npx hardhat node
-npx hardhat ignition deploy ./ignition/modules/Lock.js
 ```
+
+## Deploy Contracts
+
+Make sure to configure your network in the `hardhat.config.js` file, and then use the following command to deploy:
+
+```bash
+npx hardhat run scripts/mainnet/deploy.js --network base
+```
+
+## License
+
+This project is licensed under the MIT License.
 
 ## Important links
 
