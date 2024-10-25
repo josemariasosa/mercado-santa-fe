@@ -114,6 +114,7 @@ contract BodegaDeChocolates is ERC4626, Ownable { /// <-------- REMOVE OWNABLE
 
     function lend(address _to, uint256 _amount) external onlyValidMercado {
         availableAsset -= _amount;
+        totalInCDP += _amount; /// bug in v0.1.0
 
         doTransferOut(asset(), _to, _amount); // send pesos
     }
