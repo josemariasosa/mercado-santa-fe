@@ -107,6 +107,102 @@ describe("Mercado Santa Fe 🏗️ - Borrow and Lending protocol ----", function
 
 
     });
+
+    it("Validate deployed APY.", async function () {
+      const {
+        MercadoSantaFeContract,
+      } = await loadFixture(deployProtocolFixture);
+
+      const MercadoSantaFe = await ethers.getContractFactory("MercadoSantaFeHarness");
+      const BodegaDeChocolates = await ethers.getContractFactory("BodegaDeChocolates");
+      const USDCToken = await ethers.getContractFactory("USDCToken");
+      const WETHToken = await ethers.getContractFactory("WETHToken");
+      const ETHToUSDOracle = await ethers.getContractFactory("ETHToUSDOracle");
+
+      const [owner] = await ethers.getSigners();
+
+      /// Deploying dummy tokens.
+
+      const USDCTokenContract = await USDCToken.deploy();
+      await USDCTokenContract.waitForDeployment();
+
+      const WETHTokenContract = await WETHToken.deploy();
+      await WETHTokenContract.waitForDeployment();
+
+      const ETHToUSDOracleContract = await ETHToUSDOracle.deploy();
+      await ETHToUSDOracleContract.waitForDeployment();
+
+      /// Deploying markets.
+
+      const BodegaContract = await BodegaDeChocolates.deploy(USDCTokenContract.target, owner.address);
+      await BodegaContract.waitForDeployment();
+
+      await expect(MercadoSantaFe.deploy(
+        WETHTokenContract.target,
+        BodegaContract.target,
+        ETHToUSDOracleContract.target,
+        ethers.parseEther("0.01"),
+        ethers.parseUnits("10000", 18),
+        ethers.parseUnits("100", 18),
+        (await MercadoSantaFeContract.MIN_BASE_APY_BP()) - 1n,
+        3200,
+      )).to.be.revertedWithCustomError(MercadoSantaFe, "InvalidAPY");
+
+      await expect(MercadoSantaFe.deploy(
+        WETHTokenContract.target,
+        BodegaContract.target,
+        ETHToUSDOracleContract.target,
+        ethers.parseEther("0.01"),
+        ethers.parseUnits("10000", 18),
+        ethers.parseUnits("100", 18),
+        800,
+        (await MercadoSantaFeContract.MAX_COMBINED_APY_BP()),
+      )).to.be.revertedWithCustomError(MercadoSantaFe, "InvalidAPY");
+    });
+  });
+
+  describe("Calculate APY", function () {
+    it("Correct calculations.", async function () {
+      const {
+        MercadoSantaFeContract,
+      } = await loadFixture(deployProtocolFixture);
+
+      expect(
+        await MercadoSantaFeContract.calculateAPY(1000)
+      ).to.be.equal(await MercadoSantaFeContract.baseApyBp());
+
+      let lastApy = await MercadoSantaFeContract.baseApyBp();
+      const maxLtv = await MercadoSantaFeContract.MAX_LTV_BP();
+      let allRun = false;
+      for (let ltv = 1000; ltv <= maxLtv; ltv += 100) {
+        // exponential chart of APY. 📈
+        // console.log(ltv, await MercadoSantaFeContract.calculateAPY(ltv));
+        if (ltv <= (await MercadoSantaFeContract.SAFE_LTV_BP())) {
+          expect(
+            await MercadoSantaFeContract.calculateAPY(ltv)
+          ).to.be.equal(await MercadoSantaFeContract.baseApyBp());
+
+        } else if (ltv < (await MercadoSantaFeContract.MAX_LTV_BP())) {
+          expect(
+            await MercadoSantaFeContract.calculateAPY(ltv)
+          ).to.be.greaterThan(lastApy);
+            lastApy = await MercadoSantaFeContract.calculateAPY(ltv);
+
+        } else {
+          allRun = true;
+          expect(
+            await MercadoSantaFeContract.calculateAPY(ltv)
+          ).to.be.greaterThan(lastApy);
+          expect(
+            await MercadoSantaFeContract.calculateAPY(ltv)
+          ).to.be.equal(
+            (await MercadoSantaFeContract.baseApyBp())
+            + (await MercadoSantaFeContract.maxAdditionalApyBp())
+          );
+        }
+      }
+      expect(allRun).to.be.true;
+    });
   });
 
   describe("Exchange rates", function () {

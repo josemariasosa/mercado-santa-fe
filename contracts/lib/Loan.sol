@@ -52,7 +52,11 @@ library LoanLib {
     }
 
     /// Loan Total Grand Debt.
-    function grandDebt(Loan memory _self) internal pure returns (uint256 _debt) {
+    function grandDebt(
+        Loan memory _self//,
+        // uint16 _penalty,
+        // uint256 _fixedLoanFee
+    ) internal pure returns (uint256 _debt) {
         uint256 withInterest = _self.amount.mulDiv(
             BASIS_POINTS + _self.apy,
             BASIS_POINTS,

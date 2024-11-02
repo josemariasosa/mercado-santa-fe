@@ -59,8 +59,8 @@ contract MercadoSantaFe is ReentrancyGuard {
     uint8 private constant MIN_INSTALLMENTS = 2; // 2 installments are required by loanDebtStatus
 
     /// @dev APY range 4% to 60%.
-    uint16 private constant MAX_COMBINED_APY_BP = 6000;
-    uint16 private constant MIN_BASE_APY_BP = 400;
+    uint16 public constant MAX_COMBINED_APY_BP = 6000;
+    uint16 public constant MIN_BASE_APY_BP = 400;
 
     uint16 public constant SAFE_LTV_BP = 45_00;
     uint16 public constant MAX_LTV_BP = 85_00;
@@ -97,8 +97,9 @@ contract MercadoSantaFe is ReentrancyGuard {
     event Withdrawal(uint amount, uint when);
 
     error CollatLessThanAmount();
-    error ExceedingMaxLTV();
     error DoNotLeaveDust(uint256 _change);
+    error ExceedingMaxLTV();
+    error InvalidAPY();
     error InvalidBasisPoint();
     error InvalidInput();
     error InvalidIntervalDuration();
@@ -391,7 +392,7 @@ contract MercadoSantaFe is ReentrancyGuard {
                 || _baseApy < MIN_BASE_APY_BP
                 || _additionalApy > BASIS_POINTS
                 || _baseApy + _additionalApy > MAX_COMBINED_APY_BP) {
-            revert InvalidBasisPoint();
+            revert InvalidAPY();
         }
     }
 
