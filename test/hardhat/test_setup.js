@@ -34,10 +34,22 @@ async function deployProtocolFixture() {
   await BodegaContract.waitForDeployment();
 
   const MercadoSantaFeContract = await MercadoSantaFe.deploy(
+    // IERC20 _collateral,
     USDCTokenContract.target,
+    // IBodegaDeChocolates _bodega,
     BodegaContract.target,
+    // IPriceFeed _collatToPesosOracle,
     USDToMXNOracleContract.target,
-    ethers.parseUnits("10", 6) // 10 usd
+    // uint256 _minCollateralAmount,
+    ethers.parseUnits("10", 6), // 10 usd
+    // uint256 _maxCreditAmount, // 10,000 pesos. Use smalls values for testing.
+    ethers.parseUnits("10000", 18),
+    // uint256 _minCreditAmount, //    100 pesos.
+    ethers.parseUnits("100", 18),
+    // uint16 _baseApyBp,
+    800, // 8%
+    // uint16 _maxAdditionalApyBp
+    3200, // 32%
   );
   await MercadoSantaFeContract.waitForDeployment();
 

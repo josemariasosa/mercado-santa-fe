@@ -58,7 +58,7 @@ library LoanLib {
             BASIS_POINTS,
             Math.Rounding.Ceil
         );
-        if (withInterest > 0) return _debt = FIXED_LOAN_FEE + withInterest;
+        if (withInterest > 0) _debt = FIXED_LOAN_FEE + withInterest;
     }
 
     function isLate(Loan memory _self) internal view returns (bool) {
@@ -92,7 +92,6 @@ library LoanLib {
 struct LoanForm {
     uint256 amount;
     uint8 installments;     // cuantos abonos?
-    uint256 maxAcceptedApy; // as basis point 100% == 100_00
     uint32 duration;        // in seconds
     uint256 attachedCollateral;
 }
