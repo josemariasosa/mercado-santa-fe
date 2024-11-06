@@ -14,9 +14,11 @@ import "hardhat/console.sol";
 struct Loan {
     address owner;
     /// @dev amount and totalPayment are denominated in pesos.
-    uint256 amount;
+    uint256 loanAmount;
 
-    /// @dev totalPayment should NEVER be greater than grandDebt.
+    uint256 debtAmount;
+
+    /// @dev totalPayment should NEVER be greater than debtAmount.
     uint256 totalPayment;
 
     /// @dev Number of payments the owner will have to do.
@@ -37,40 +39,52 @@ library LoanLib {
     using Math for uint256;
 
     uint16 private constant BASIS_POINTS = 100_00; // 100.00%
-    uint256 internal constant FIXED_LOAN_FEE = 100 * 10**18; // "Cien pesos", can be zero.
 
     ///@dev the most common term for a time extension allowed after the due date.
     uint256 private constant GRACE_PERIOD = 5 days; // 5 natural days
-
-    function getFixedLoanFee() internal pure returns (uint256) {
-        return FIXED_LOAN_FEE;
-    }
 
     /// @dev should revert if the interval is invalid.
     function intervalDuration(Loan memory _self) internal pure returns (uint256 _intervalDuration) {
         _intervalDuration = uint256(_self.duration).mulDiv(1, _self.installments, Math.Rounding.Ceil);
     }
 
-    /// Loan Total Grand Debt.
-    function grandDebt(
-        Loan memory _self//,
-        // uint16 _penalty,
-        // uint256 _fixedLoanFee
+    /// @dev Debt without the penalty.
+    function getTotalDebt (
+        uint256 _apy,
+        uint256 _fixedLoanFee,
+        uint256 _loanAmount
     ) internal pure returns (uint256 _debt) {
-        uint256 withInterest = _self.amount.mulDiv(
-            BASIS_POINTS + _self.apy,
+        uint256 withInterest = _loanAmount.mulDiv(
+            BASIS_POINTS + _apy,
             BASIS_POINTS,
             Math.Rounding.Ceil
         );
-        if (withInterest > 0) _debt = FIXED_LOAN_FEE + withInterest;
+        if (withInterest > 0) _debt = _fixedLoanFee + withInterest;
+    }
+
+    /// Loan Total Grand Debt.
+    function grandDebt(
+        Loan memory _self,
+        uint16 _penaltyBp
+    ) internal view returns (uint256 _debt) {
+        if (isLate(_self)) {
+            uint256 penalty = _self.debtAmount.mulDiv(_penaltyBp, BASIS_POINTS, Math.Rounding.Ceil);
+            _debt = _self.debtAmount + penalty;
+        } else {
+            _debt = _self.debtAmount;
+        }
     }
 
     function isLate(Loan memory _self) internal view returns (bool) {
-        return block.timestamp - GRACE_PERIOD > _self.createdAt + _self.duration;
+        return !isFullyPaid(_self) && block.timestamp > _self.createdAt + _self.duration;
+    }
+
+    function isOverdue(Loan memory _self) internal view returns (bool) {
+        return !isFullyPaid(_self) && block.timestamp - GRACE_PERIOD > _self.createdAt + _self.duration;
     }
 
     function isFullyPaid(Loan memory _self) internal pure returns (bool) {
-        return grandDebt(_self) == _self.totalPayment;
+        return _self.debtAmount == _self.totalPayment;
     }
 
     /// @return 0 if the first installment isn't due.

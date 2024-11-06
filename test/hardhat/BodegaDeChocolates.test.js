@@ -83,7 +83,7 @@ describe("Bodega de Chocolates 🍫 ----", function () {
       // expect(await MercadoSantaFeContract.getActiveLoans(alice.address)).to.be.equal(1);
       // expect(
       //   await MercadoSantaFeContract.getUserDebt(alice.address)
-      // ).to.be.equal(calcGrandTotal(borrowAmount, apy, await MercadoSantaFeContract.getFixedLoanFee()));
+      // ).to.be.equal(calcGrandTotal(borrowAmount, apy, await MercadoSantaFeContract.fixedLoanFee()));
     });
 
     it("With 1 loan.", async function () {
@@ -131,7 +131,7 @@ describe("Bodega de Chocolates 🍫 ----", function () {
       const apy = (await MercadoSantaFeContract.getLoan(1)).apy;
       expect(
         await MercadoSantaFeContract.getUserDebt(alice.address)
-      ).to.be.equal(calcGrandTotal(borrowAmount, apy, await MercadoSantaFeContract.getFixedLoanFee()));
+      ).to.be.equal(calcGrandTotal(borrowAmount, apy, await MercadoSantaFeContract.fixedLoanFee()));
     });
   });
 });

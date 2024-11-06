@@ -47,6 +47,9 @@ contract MercadoSantaFe is ReentrancyGuard {
     uint16 public immutable baseApyBp;
     uint16 public immutable maxAdditionalApyBp;
 
+    uint16 public immutable penaltyBp;
+    uint256 public immutable fixedLoanFee;
+
     /// Hard Constants ------------------------------------------------------------------
 
     uint16 private constant BASIS_POINTS = 100_00; // 100.00%
@@ -61,6 +64,8 @@ contract MercadoSantaFe is ReentrancyGuard {
     /// @dev APY range 4% to 60%.
     uint16 public constant MAX_COMBINED_APY_BP = 6000;
     uint16 public constant MIN_BASE_APY_BP = 400;
+
+    uint16 public constant MAX_LOAN_PENALTY_BP = 20_00;
 
     uint16 public constant SAFE_LTV_BP = 45_00;
     uint16 public constant MAX_LTV_BP = 85_00;
@@ -87,10 +92,10 @@ contract MercadoSantaFe is ReentrancyGuard {
     mapping (uint256 => Loan) private loans;
 
     /// @dev refers to the original amount loaned, before interest is added.
-    uint256 public loanPrincipal;
+    // uint256 public loanPrincipal; // todo
 
     /// @dev refers to the loan principal plus interest. Do not include penalties.
-    uint256 public loanAmountWithInterest;
+    uint256 public loanAmountWithInterest; // todo -> check variable name
 
     /// Errors & events -----------------------------------------------------------------
 
@@ -116,6 +121,7 @@ contract MercadoSantaFe is ReentrancyGuard {
     error NotEnoughCollatToBorrow();
     error NotEnoughLiquidity();
     error PayOnlyWhatYouOwn(uint256 _remainingDebt);
+    error LoanIsNotOverdue();
 
     modifier loanExists(uint256 _loanId) {
         _assertLoanExists(_loanId);
@@ -129,8 +135,10 @@ contract MercadoSantaFe is ReentrancyGuard {
         uint256 _minCollateralAmount,
         uint256 _maxCreditAmount, // 10,000 pesos. Use smalls values for testing.
         uint256 _minCreditAmount, //    100 pesos.
+        uint256 _fixedLoanFee,
         uint16 _baseApyBp,
-        uint16 _maxAdditionalApyBp
+        uint16 _maxAdditionalApyBp,
+        uint16 _penaltyBp
     ) {
         if (
             _collateral == IERC20(address(0))
@@ -142,6 +150,7 @@ contract MercadoSantaFe is ReentrancyGuard {
                 || _baseApyBp == 0
                 || _maxAdditionalApyBp == 0
                 || _minCreditAmount > _maxCreditAmount
+                || _penaltyBp > MAX_LOAN_PENALTY_BP
         ) revert InvalidInput();
 
         collateral = address(_collateral);
@@ -152,6 +161,9 @@ contract MercadoSantaFe is ReentrancyGuard {
         _validateApy(_baseApyBp, _maxAdditionalApyBp);
         baseApyBp = _baseApyBp;
         maxAdditionalApyBp = _maxAdditionalApyBp;
+
+        penaltyBp = _penaltyBp;
+        fixedLoanFee = _fixedLoanFee;
 
         /// @dev The loan amount is denominated in the asset of the bodega.
         maxCreditAmount = _maxCreditAmount;
@@ -175,6 +187,10 @@ contract MercadoSantaFe is ReentrancyGuard {
     }
 
     /// Public View functions -----------------------------------------------------------
+
+    function totalDeployedInLoans() external view returns (uint256) {
+        return loanAmountWithInterest;
+    }
 
     /// @dev Duration of the loan, divided by the number of intervals.
     function getIntervalDuration(
@@ -221,7 +237,9 @@ contract MercadoSantaFe is ReentrancyGuard {
         User memory _user = users[_account];
         for (uint i; i < _user.loanIds.length; i++) {
             uint _id = _user.loanIds[i];
-            if (_id > 0) _amount += (loans[_id].grandDebt() - loans[_id].totalPayment);
+            if (_id > 0) {
+                _amount += (loans[_id].debtAmount - loans[_id].totalPayment);
+            }
         }
     }
 
@@ -249,10 +267,6 @@ contract MercadoSantaFe is ReentrancyGuard {
         return fromCollatToPesos(_amount.mulDiv(BASIS_POINTS, _ltvBp, Math.Rounding.Floor));
     }
 
-    function getFixedLoanFee() external pure returns (uint256) {
-        return LoanLib.getFixedLoanFee();
-    }
-
     // 10000*(((7500-6000) / (8500-6000))**2) = 36%
     // 10000*(((7500-6000) / (8500-6000))**2) * (2000) / 10000 = 7.2%
     function calculateAPY(uint256 _ltv) public view returns (uint256) {
@@ -263,18 +277,29 @@ contract MercadoSantaFe is ReentrancyGuard {
         return baseApyBp + additionalApy;
     }
 
-    /// Use an exponential function to disincentivize higher LTVs,
-    /// you can apply an exponential growth factor that makes the APY increase more sharply
-    /// as the LTV approaches the maximum. This approach amplifies the APY increase at
-    /// higher LTVs, penalizing loans that approach the upper LTV limit.
-    /// totalAPY = baseAPY + maxAdditionalAPY × (LTV−minLTV​ / maxLTV−minLTV) ** exponentFactor
-    function _calculateFormula(uint256 _ltv) private view returns (uint256) {
-        uint256 numerator = _ltv - SAFE_LTV_BP;
-        uint256 denominator = MAX_LTV_BP - SAFE_LTV_BP;
-        uint256 fraction = numerator.mulDiv(BASIS_POINTS, denominator); // Scale up to maintain precision
-        uint256 squaredFraction = fraction.mulDiv(fraction, BASIS_POINTS); // Scale down after squaring
-        uint256 result = squaredFraction.mulDiv(maxAdditionalApyBp, BASIS_POINTS);
-        return result;
+    /// 🤖
+
+    function liquidateDebt(uint256 _loanId) external loanExists(_loanId) {
+        Loan storage loan = loans[_loanId];
+        if (!loan.isOverdue()) revert LoanIsNotOverdue();
+
+        uint256 remainingDebt = _debtWithPenalty(loan.debtAmount) - loan.totalPayment;
+        uint256 collateralToLiquidate = fromPesosToCollat(remainingDebt);
+
+        if (collateralToLiquidate > loan.attachedCollateral) {
+            collateralToLiquidate = loan.attachedCollateral;
+        }
+
+        loan.attachedCollateral -= collateralToLiquidate;
+        loan.totalPayment += remainingDebt;
+
+        if (loan.totalPayment >= loan.debtAmount) {
+            _activeUsers.remove(loan.owner);
+        }
+
+        /// sending collateral to Bodega
+        IERC20(bodega.asset()).safeIncreaseAllowance(address(bodega), collateralToLiquidate);
+        bodega.receiveCollateral(collateralToLiquidate);
     }
 
     /// Managing the Collateral ---------------------------------------------------------
@@ -347,6 +372,8 @@ contract MercadoSantaFe is ReentrancyGuard {
         /// updating Storage
         loan.totalPayment += _amount;
 
+        loanAmountWithInterest -= _amount;
+
         /// sending payment to Bodega
         IERC20(bodega.asset()).safeIncreaseAllowance(address(bodega), _amount);
         bodega.receivePayment(_amount);
@@ -379,10 +406,10 @@ contract MercadoSantaFe is ReentrancyGuard {
         _activeUsers.add(_owner);
         
         // updating storage
-        loanPrincipal += loan.amount;
-        loanAmountWithInterest += loan.grandDebt();
+        // loanPrincipal += loan.loanAmount;
+        loanAmountWithInterest += loan.debtAmount;
 
-        bodega.lend(_owner, loan.amount);
+        bodega.lend(_owner, loan.loanAmount);
     }
 
     /// PRIVATE PARTY 🎛️ ----------------------------------------------------------------
@@ -403,7 +430,8 @@ contract MercadoSantaFe is ReentrancyGuard {
     ) internal view returns (Loan memory _loan) {
         return Loan({
             owner: _owner,
-            amount: _loanForm.amount,
+            loanAmount: _loanForm.amount,
+            debtAmount: LoanLib.getTotalDebt(_apy, fixedLoanFee, _loanForm.amount),
             totalPayment: 0,
             installments: _loanForm.installments,
             apy: safe16(_apy),
@@ -427,11 +455,11 @@ contract MercadoSantaFe is ReentrancyGuard {
 
     /// @dev validate the loan before creating it.
     function _validateLoan(Loan memory _loan) internal nonReentrant {
-        if (_loan.amount > bodega.availableAsset()) {
+        if (_loan.loanAmount > bodega.availableAsset()) {
             revert NotEnoughLiquidity();
         }
-        if (_loan.amount > maxCreditAmount
-                || _loan.amount < minCreditAmount) {
+        if (_loan.loanAmount > maxCreditAmount
+                || _loan.loanAmount < minCreditAmount) {
             revert InvalidLoanAmount();
         }
         if (_loan.installments > MAX_INSTALLMENTS
@@ -451,7 +479,7 @@ contract MercadoSantaFe is ReentrancyGuard {
     /// @dev this function consider different scenarios, using the block.timestamp.
     function _loanDebtStatus(Loan memory _loan) internal view returns (LoanDebtStatus memory _status) {
         // Loan Grand Debt. Includes fee.
-        uint256 grandDebt = _loan.grandDebt();
+        uint256 grandDebt = _loan.debtAmount;
 
         // Last payment must be for the total debt.
         uint256 payment = grandDebt.mulDiv(1, _loan.installments, Math.Rounding.Floor);
@@ -493,7 +521,7 @@ contract MercadoSantaFe is ReentrancyGuard {
     /// @dev The price in base asset pesos, of the collateral.
     /// @param _amount in collateral.
     /// @return The value in Pesos of the _amount in collateral.
-    function fromCollatToPesos(uint256 _amount) internal view returns (uint256) {
+    function fromCollatToPesos(uint256 _amount) public view returns (uint256) {
         return (_amount * 10**_decimalsOffset).mulDiv(
             collatPricePesos(),
             _collat2PesosConversionConstant,
@@ -523,6 +551,24 @@ contract MercadoSantaFe is ReentrancyGuard {
         for (uint i; i < MAX_LOANS_BY_USER; i++) {
             if (loanIds[i] > 0) _res++;
         }
+    }
+
+    /// Use an exponential function to disincentivize higher LTVs,
+    /// you can apply an exponential growth factor that makes the APY increase more sharply
+    /// as the LTV approaches the maximum. This approach amplifies the APY increase at
+    /// higher LTVs, penalizing loans that approach the upper LTV limit.
+    /// totalAPY = baseAPY + maxAdditionalAPY × (LTV−minLTV​ / maxLTV−minLTV) ** exponentFactor
+    function _calculateFormula(uint256 _ltv) private view returns (uint256) {
+        uint256 numerator = _ltv - SAFE_LTV_BP;
+        uint256 denominator = MAX_LTV_BP - SAFE_LTV_BP;
+        uint256 fraction = numerator.mulDiv(BASIS_POINTS, denominator); // Scale up to maintain precision
+        uint256 squaredFraction = fraction.mulDiv(fraction, BASIS_POINTS); // Scale down after squaring
+        uint256 result = squaredFraction.mulDiv(maxAdditionalApyBp, BASIS_POINTS);
+        return result;
+    }
+
+    function _debtWithPenalty(uint256 _debt) private view returns (uint256) {
+        return _debt.mulDiv(BASIS_POINTS + penaltyBp, BASIS_POINTS, Math.Rounding.Ceil);
     }
 
     function safe16(uint256 _amount) private pure returns (uint16) {

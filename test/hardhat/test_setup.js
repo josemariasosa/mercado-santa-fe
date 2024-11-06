@@ -46,10 +46,12 @@ async function deployProtocolFixture() {
     ethers.parseUnits("10000", 18),
     // uint256 _minCreditAmount, //    100 pesos.
     ethers.parseUnits("100", 18),
+    ethers.parseUnits("10", 18),
     // uint16 _baseApyBp,
     800, // 8%
     // uint16 _maxAdditionalApyBp
     3200, // 32%
+    1500,
   );
   await MercadoSantaFeContract.waitForDeployment();
 

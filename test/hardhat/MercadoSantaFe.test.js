@@ -144,8 +144,10 @@ describe("Mercado Santa Fe 🏗️ - Borrow and Lending protocol ----", function
         ethers.parseEther("0.01"),
         ethers.parseUnits("10000", 18),
         ethers.parseUnits("100", 18),
+        ethers.parseUnits("10", 18),
         (await MercadoSantaFeContract.MIN_BASE_APY_BP()) - 1n,
         3200,
+        1500,
       )).to.be.revertedWithCustomError(MercadoSantaFe, "InvalidAPY");
 
       await expect(MercadoSantaFe.deploy(
@@ -155,8 +157,10 @@ describe("Mercado Santa Fe 🏗️ - Borrow and Lending protocol ----", function
         ethers.parseEther("0.01"),
         ethers.parseUnits("10000", 18),
         ethers.parseUnits("100", 18),
+        ethers.parseUnits("10", 18),
         800,
         (await MercadoSantaFeContract.MAX_COMBINED_APY_BP()),
+        1500,
       )).to.be.revertedWithCustomError(MercadoSantaFe, "InvalidAPY");
     });
   });
@@ -288,8 +292,10 @@ describe("Mercado Santa Fe 🏗️ - Borrow and Lending protocol ----", function
         ethers.parseEther("0.01"),
         ethers.parseUnits("10000", 18),
         ethers.parseUnits("100", 18),
+        ethers.parseUnits("10", 18),
         800,
         3200,
+        1500,
       );
       await MercadoSantaFeContract.waitForDeployment();
 
@@ -341,8 +347,10 @@ describe("Mercado Santa Fe 🏗️ - Borrow and Lending protocol ----", function
         ethers.parseEther("0.01"),
         ethers.parseUnits("10000", 18),
         ethers.parseUnits("100", 18),
+        ethers.parseUnits("10", 18),
         800,
         3200,
+        1500,
       );
       await MercadoSantaFeContract.waitForDeployment();
 
@@ -399,8 +407,10 @@ describe("Mercado Santa Fe 🏗️ - Borrow and Lending protocol ----", function
         ethers.parseEther("0.01"),
         ethers.parseUnits("10000", 18),
         ethers.parseUnits("100", 18),
+        ethers.parseUnits("10", 18),
         800,
         3200,
+        1500,
       );
       await MercadoSantaFeContract.waitForDeployment();
 
@@ -453,8 +463,10 @@ describe("Mercado Santa Fe 🏗️ - Borrow and Lending protocol ----", function
         ethers.parseEther("0.01"),
         ethers.parseUnits("10000", 18),
         ethers.parseUnits("100", 18),
+        ethers.parseUnits("10", 18),
         800,
         3200,
+        1500,
       );
       await MercadoSantaFeContract.waitForDeployment();
 
@@ -1033,7 +1045,7 @@ describe("Mercado Santa Fe 🏗️ - Borrow and Lending protocol ----", function
         );
         let apy = (await MercadoSantaFeContract.getLoan(i+1)).apy;
         expect(await MercadoSantaFeContract.getUserDebt(alice.address)).to.be.equal(
-          (1n + BigInt(i)) * calcGrandTotal(borrowAmount, apy, await MercadoSantaFeContract.getFixedLoanFee())
+          (1n + BigInt(i)) * calcGrandTotal(borrowAmount, apy, await MercadoSantaFeContract.fixedLoanFee())
         );
       }
 
@@ -1187,7 +1199,7 @@ describe("Mercado Santa Fe 🏗️ - Borrow and Lending protocol ----", function
       const apy = (await MercadoSantaFeContract.getLoan(1)).apy;
       expect(
         await MercadoSantaFeContract.getUserDebt(alice.address)
-      ).to.be.equal(calcGrandTotal(borrowAmount, apy, await MercadoSantaFeContract.getFixedLoanFee()));
+      ).to.be.equal(calcGrandTotal(borrowAmount, apy, await MercadoSantaFeContract.fixedLoanFee()));
     });
 
     // it("Loan parameters must be correct.", async function () {
@@ -1382,7 +1394,7 @@ describe("Mercado Santa Fe 🏗️ - Borrow and Lending protocol ----", function
       // console.log("alice balance: ", await XOCTokenContract.balanceOf(alice.address));
 
       const apy = (await MercadoSantaFeContract.getLoan(1)).apy;
-      const grandDebt = calcGrandTotal(borrowAmount, apy, await MercadoSantaFeContract.getFixedLoanFee());
+      const grandDebt = calcGrandTotal(borrowAmount, apy, await MercadoSantaFeContract.fixedLoanFee());
       const payment = grandDebt/3n;
       await XOCTokenContract.connect(alice).approve(MercadoSantaFeContract.target, MLARGE);
 
@@ -1502,7 +1514,7 @@ describe("Mercado Santa Fe 🏗️ - Borrow and Lending protocol ----", function
       // console.log("alice balance: ", await XOCTokenContract.balanceOf(alice.address));
 
       const apy = (await MercadoSantaFeContract.getLoan(1)).apy;
-      const grandDebt = calcGrandTotal(borrowAmount, apy, await MercadoSantaFeContract.getFixedLoanFee());
+      const grandDebt = calcGrandTotal(borrowAmount, apy, await MercadoSantaFeContract.fixedLoanFee());
       const payment = grandDebt/3n;
       await XOCTokenContract.connect(alice).approve(MercadoSantaFeContract.target, MLARGE);
 
@@ -1621,7 +1633,7 @@ describe("Mercado Santa Fe 🏗️ - Borrow and Lending protocol ----", function
       // console.log("alice balance: ", await XOCTokenContract.balanceOf(alice.address));
 
       const apy = (await MercadoSantaFeContract.getLoan(1)).apy;
-      const grandDebt = calcGrandTotal(borrowAmount, apy, await MercadoSantaFeContract.getFixedLoanFee());
+      const grandDebt = calcGrandTotal(borrowAmount, apy, await MercadoSantaFeContract.fixedLoanFee());
       const payment = grandDebt/3n;
       await XOCTokenContract.connect(alice).approve(MercadoSantaFeContract.target, MLARGE);
 
@@ -1722,7 +1734,7 @@ describe("Mercado Santa Fe 🏗️ - Borrow and Lending protocol ----", function
       // console.log("alice balance: ", await XOCTokenContract.balanceOf(alice.address));
 
       const apy = (await MercadoSantaFeContract.getLoan(1)).apy;
-      const grandDebt = calcGrandTotal(borrowAmount, apy, await MercadoSantaFeContract.getFixedLoanFee());
+      const grandDebt = calcGrandTotal(borrowAmount, apy, await MercadoSantaFeContract.fixedLoanFee());
       const payment = grandDebt/3n;
       await XOCTokenContract.connect(alice).approve(MercadoSantaFeContract.target, MLARGE);
 
@@ -1823,7 +1835,7 @@ describe("Mercado Santa Fe 🏗️ - Borrow and Lending protocol ----", function
       // console.log("alice balance: ", await XOCTokenContract.balanceOf(alice.address));
 
       const apy = (await MercadoSantaFeContract.getLoan(1)).apy;
-      const grandDebt = calcGrandTotal(borrowAmount, apy, await MercadoSantaFeContract.getFixedLoanFee());
+      const grandDebt = calcGrandTotal(borrowAmount, apy, await MercadoSantaFeContract.fixedLoanFee());
       const payment = grandDebt/3n;
       await XOCTokenContract.connect(alice).approve(MercadoSantaFeContract.target, MLARGE);
 
@@ -1924,7 +1936,7 @@ describe("Mercado Santa Fe 🏗️ - Borrow and Lending protocol ----", function
       // console.log("alice balance: ", await XOCTokenContract.balanceOf(alice.address));
 
       const apy = (await MercadoSantaFeContract.getLoan(1)).apy;
-      const grandDebt = calcGrandTotal(borrowAmount, apy, await MercadoSantaFeContract.getFixedLoanFee());
+      const grandDebt = calcGrandTotal(borrowAmount, apy, await MercadoSantaFeContract.fixedLoanFee());
       const payment = grandDebt/3n;
       await XOCTokenContract.connect(alice).approve(MercadoSantaFeContract.target, MLARGE);
 

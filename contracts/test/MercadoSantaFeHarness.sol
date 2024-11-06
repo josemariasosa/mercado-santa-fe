@@ -15,8 +15,10 @@ contract MercadoSantaFeHarness is MercadoSantaFe {
         uint256 _minCollateralAmount,
         uint256 _maxCreditAmount,
         uint256 _minCreditAmount,
+        uint256 _fixedLoanFee,
         uint16 _baseApyBp,
-        uint16 _maxAdditionalApyBp
+        uint16 _maxAdditionalApyBp,
+        uint16 _penaltyBp
     ) MercadoSantaFe(
         _collateral,
         _bodega,
@@ -24,8 +26,10 @@ contract MercadoSantaFeHarness is MercadoSantaFe {
         _minCollateralAmount,
         _maxCreditAmount,
         _minCreditAmount,
+        _fixedLoanFee,
         _baseApyBp,
-        _maxAdditionalApyBp
+        _maxAdditionalApyBp,
+        _penaltyBp
     ) {}
 
     function test__loanDebtStatus(Loan memory _loan) external view returns (LoanDebtStatus memory _status) {
