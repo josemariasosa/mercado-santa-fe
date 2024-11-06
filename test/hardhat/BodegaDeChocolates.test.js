@@ -83,7 +83,7 @@ describe("Bodega de Chocolates 🍫 ----", function () {
       // expect(await MercadoSantaFeContract.getActiveLoans(alice.address)).to.be.equal(1);
       // expect(
       //   await MercadoSantaFeContract.getUserDebt(alice.address)
-      // ).to.be.equal(calcGrandTotal(borrowAmount, apy, await MercadoSantaFeContract.getFixedLoanFee()));
+      // ).to.be.equal(calcGrandTotal(borrowAmount, apy, await MercadoSantaFeContract.fixedLoanFee()));
     });
 
     it("With 1 loan.", async function () {
@@ -112,8 +112,6 @@ describe("Bodega de Chocolates 🍫 ----", function () {
       const borrowAmount = await MercadoSantaFeContract.estimateLoanAmount(borrowCollat, 6000);
       // console.log(ethers.formatEther(borrowAmount));
 
-      const apy = await MercadoSantaFeContract.calculateAPY(borrowAmount, DURATION_3_MONTHS, borrowCollat);
-
       /// Create first loan.
       await MercadoSantaFeContract.connect(alice).borrow(
         [
@@ -121,8 +119,6 @@ describe("Bodega de Chocolates 🍫 ----", function () {
           borrowAmount,
           // uint8 installments;
           3,
-          // uint16 apy;
-          apy,
           // uint32 duration;
           DURATION_3_MONTHS,
           // uint256 attachedCollateral;
@@ -131,9 +127,11 @@ describe("Bodega de Chocolates 🍫 ----", function () {
       );
       expect(await MercadoSantaFeContract.getUserCollat(alice.address)).to.be.equal(initialCollat - borrowCollat);
       expect(await MercadoSantaFeContract.getActiveLoans(alice.address)).to.be.equal(1);
+
+      const apy = (await MercadoSantaFeContract.getLoan(1)).apy;
       expect(
         await MercadoSantaFeContract.getUserDebt(alice.address)
-      ).to.be.equal(calcGrandTotal(borrowAmount, apy, await MercadoSantaFeContract.getFixedLoanFee()));
+      ).to.be.equal(calcGrandTotal(borrowAmount, apy, await MercadoSantaFeContract.fixedLoanFee()));
     });
   });
 });

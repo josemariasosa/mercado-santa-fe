@@ -12,12 +12,24 @@ contract MercadoSantaFeHarness is MercadoSantaFe {
         IERC20 _collateral,
         IBodegaDeChocolates _bodega,
         IPriceFeed _collatToPesosOracle,
-        uint256 _minCollateralAmount
+        uint256 _minCollateralAmount,
+        uint256 _maxCreditAmount,
+        uint256 _minCreditAmount,
+        uint256 _fixedLoanFee,
+        uint16 _baseApyBp,
+        uint16 _maxAdditionalApyBp,
+        uint16 _penaltyBp
     ) MercadoSantaFe(
         _collateral,
         _bodega,
         _collatToPesosOracle,
-        _minCollateralAmount
+        _minCollateralAmount,
+        _maxCreditAmount,
+        _minCreditAmount,
+        _fixedLoanFee,
+        _baseApyBp,
+        _maxAdditionalApyBp,
+        _penaltyBp
     ) {}
 
     function test__loanDebtStatus(Loan memory _loan) external view returns (LoanDebtStatus memory _status) {
@@ -28,7 +40,7 @@ contract MercadoSantaFeHarness is MercadoSantaFe {
         return block.timestamp;
     }
 
-    function test__validateLoan(Loan memory _loan) external view {
+    function test__validateLoan(Loan memory _loan) external {
         return  _validateLoan(_loan);
     }
 

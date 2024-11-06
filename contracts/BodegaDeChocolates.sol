@@ -28,7 +28,8 @@ contract BodegaDeChocolates is ERC4626, Ownable { /// <-------- REMOVE OWNABLE
     IMercadoSantaFe public mercado;
 
     uint256 public availableAsset; // ready to be borrowed.
-    uint256 public totalInCDP;     // lock in a loan, in pesos
+    uint256 public availableCollateral;
+    // uint256 public totalInCDP;     // lock in a loan, in pesos
 
     uint256 public pendingForWOS;
     uint256 public totalInWOS;     // total waiting in a withdraw order
@@ -63,7 +64,14 @@ contract BodegaDeChocolates is ERC4626, Ownable { /// <-------- REMOVE OWNABLE
     }
 
     function totalAssets() public view override returns (uint256) {
-        return availableAsset + totalInCDP;
+        // return availableAsset + totalInCDP;
+        uint256 inCollateral;
+        if (availableCollateral > 0) {
+            inCollateral = mercado.fromCollatToPesos(availableCollateral);
+        }
+        return availableAsset
+            + mercado.totalDeployedInLoans()
+            + inCollateral;
     }
 
     /// Lending Pesos -------------------------------------------------------------------
@@ -114,6 +122,7 @@ contract BodegaDeChocolates is ERC4626, Ownable { /// <-------- REMOVE OWNABLE
 
     function lend(address _to, uint256 _amount) external onlyValidMercado {
         availableAsset -= _amount;
+        // totalInCDP += _amount; /// bug in v0.1.0
 
         doTransferOut(asset(), _to, _amount); // send pesos
     }
@@ -122,7 +131,12 @@ contract BodegaDeChocolates is ERC4626, Ownable { /// <-------- REMOVE OWNABLE
         /// TODO
         SafeERC20.safeTransferFrom(IERC20(asset()), msg.sender, address(this), _amount);
         availableAsset += _amount;
-        
+    }
+
+    function receiveCollateral(uint256 _amount) external onlyValidMercado {
+        /// TODO
+        SafeERC20.safeTransferFrom(IERC20(mercado.collateral()), msg.sender, address(this), _amount);
+        availableCollateral += _amount;
     }
 
     // withdraw is never that simple !
@@ -181,6 +195,7 @@ contract BodegaDeChocolates is ERC4626, Ownable { /// <-------- REMOVE OWNABLE
     }
 
     function _flush() private {
+        uint256 totalInCDP = mercado.totalDeployedInLoans();
 
         if (totalInWOS > totalInCDP) {
             uint256 delta = totalInWOS - totalInCDP;
