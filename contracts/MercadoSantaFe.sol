@@ -192,6 +192,15 @@ contract MercadoSantaFe is ReentrancyGuard {
         return loanAmountWithInterest;
     }
 
+    function getTotalDebt (
+        uint256 _loanAmount,
+        uint256 _collatAmount
+    ) external view returns (uint256 _debt) {
+        uint256 collatInPesos = fromCollatToPesos(_collatAmount);
+        uint256 ltv = _loanAmount.mulDiv(BASIS_POINTS, collatInPesos, Math.Rounding.Ceil);
+        return LoanLib.getTotalDebt(calculateAPY(ltv), fixedLoanFee, _loanAmount);
+    }
+
     /// @dev Duration of the loan, divided by the number of intervals.
     function getIntervalDuration(
         uint256 _loanId

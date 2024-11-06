@@ -31,7 +31,7 @@ contract BodegaDeChocolates is ERC4626, Ownable { /// <-------- REMOVE OWNABLE
     uint256 public availableCollateral;
     // uint256 public totalInCDP;     // lock in a loan, in pesos
 
-    uint256 public pendingForWOS;
+    uint256 private pendingForWOS; // *** NOTE: this has to be private because it's only use for the loop.
     uint256 public totalInWOS;     // total waiting in a withdraw order
 
     /// @dev FIFO implementation
@@ -193,6 +193,8 @@ contract BodegaDeChocolates is ERC4626, Ownable { /// <-------- REMOVE OWNABLE
     function _min(uint256 a, uint256 b) private pure returns (uint256) {
         if (a < b) { return a; } else { return b; }
     }
+
+    function flush() external { _flush(); }
 
     function _flush() private {
         uint256 totalInCDP = mercado.totalDeployedInLoans();
